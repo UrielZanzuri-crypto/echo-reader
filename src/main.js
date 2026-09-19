@@ -15,6 +15,9 @@ import { PageView } from './lib/pageview.js'
 import { importFile, isPdf } from './lib/importers.js'
 import { loadSettings, saveSettings, loadDocument, saveDocument, DEFAULT_SETTINGS } from './lib/store.js'
 import { SAMPLE_TEXT, SAMPLE_TITLE } from './lib/sample.js'
+import { classifyVoice, filterVoices, sortVoices, PREVIEW_SENTENCE } from './lib/voices.js'
+import { NoisePlayer, NOISE_COLOURS } from './lib/noise.js'
+import { Checkpoints } from './lib/checkpoints.js'
 
 const $ = (id) => document.getElementById(id)
 
@@ -42,6 +45,16 @@ const el = {
   timeLabel: $('timeLabel'),
   statusLabel: $('statusLabel'),
   voiceSelect: $('voiceSelect'),
+  btnPreview: $('btnPreview'),
+  btnNoise: $('btnNoise'),
+  showAllVoices: $('showAllVoices'),
+  noiseColour: $('noiseColour'),
+  noiseVolume: $('noiseVolume'),
+  noiseVolumeValue: $('noiseVolumeValue'),
+  focusMode: $('focusMode'),
+  checkpointMinutes: $('checkpointMinutes'),
+  pauseWhenAway: $('pauseWhenAway'),
+  checkpoint: $('checkpoint'),
   rateSlider: $('rateSlider'),
   rateValue: $('rateValue'),
 
@@ -93,6 +106,13 @@ let paintQueued = false
 let toastTimer = null
 let scrubbing = false
 
+const noise = new NoisePlayer()
+/** Where play should resume from after a missed check-in or a switch away; -1 = nowhere. */
+let rewindTo = -1
+let checkpoints = null
+let checkpointTimer = 0
+let fileDialogUntil = 0 // ignore the window blur our own file picker causes
+
 /* ────────────────────────────────── boot ─────────────────────────────────── */
 
 function boot() {
@@ -112,6 +132,10 @@ function boot() {
   })
   view.setMode(settings.highlightMode)
   view.autoScroll = settings.autoScroll
+  applyFocusMode()
+  setupCheckpoints()
+  bindAwayGuard()
+  updateNoiseButton()
 
   if (!isSpeechSupported()) {
     setStatus('Speech synthesis is unavailable in this browser')
@@ -181,6 +205,7 @@ function setView(name) {
   const usePages = name === 'page' && hasPages
   view = usePages ? pageView : reader
   view.setMode(settings.highlightMode)
+  view.setFocusMode(settings.focusMode)
   view.autoScroll = settings.autoScroll
   ;(usePages ? reader : pageView).clearHighlight()
 
@@ -269,8 +294,12 @@ function updateEditorStats() {
 /* ───────────────────────────────── controls ──────────────────────────────── */
 
 function bindControls() {
-  el.btnOpen.addEventListener('click', () => el.fileInput.click())
-  el.emptyOpen.addEventListener('click', () => el.fileInput.click())
+  const openPicker = () => {
+    fileDialogUntil = Date.now() + 3000
+    el.fileInput.click()
+  }
+  el.btnOpen.addEventListener('click', openPicker)
+  el.emptyOpen.addEventListener('click', openPicker)
   el.fileInput.addEventListener('change', () => {
     openFile(el.fileInput.files?.[0])
     el.fileInput.value = '' // let the same file be picked again
@@ -304,7 +333,7 @@ function bindControls() {
     overlay.querySelector('[data-close]')?.addEventListener('click', closeOverlays)
   }
 
-  el.btnPlay.addEventListener('click', () => engine.toggle())
+  el.btnPlay.addEventListener('click', userToggle)
   el.btnStop.addEventListener('click', () => engine.stop())
   el.btnPrev.addEventListener('click', () => engine.skipSentence(-1))
   el.btnNext.addEventListener('click', () => engine.skipSentence(1))
@@ -322,7 +351,11 @@ function bindControls() {
     settings.voiceURI = el.voiceSelect.value
     engine.update({ voiceURI: settings.voiceURI })
     saveSettings(settings)
+    previewVoice()
   })
+  el.btnPreview.addEventListener('click', previewVoice)
+  el.btnNoise.addEventListener('click', cycleNoise)
+  el.checkpoint.addEventListener('click', () => checkpoints?.acknowledge())
 
   bindProgressBar()
 
@@ -355,6 +388,7 @@ function bindProgressBar() {
     if (!current) return
     const rect = el.progress.getBoundingClientRect()
     const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+    rewindTo = -1
     engine.seek(Math.floor(ratio * current.text.length))
     view.autoScroll = settings.autoScroll
     view.highlight(engine.span, engine.sentenceIndex, { scroll: true, smooth: false })
@@ -415,6 +449,24 @@ function bindSettings() {
     saveSettings(settings)
     populateVoices(engine.getVoices())
   })
+  el.showAllVoices.checked = settings.showAllVoices
+  el.showAllVoices.addEventListener('change', () => {
+    settings.showAllVoices = el.showAllVoices.checked
+    saveSettings(settings)
+    populateVoices(engine.getVoices())
+  })
+
+  bindSegmented(el.noiseColour, 'noise', (value) => setNoise(value))
+  bindSlider(el.noiseVolume, el.noiseVolumeValue, 'noiseVolume', (v) => `${Math.round(v * 100)}%`, (v) =>
+    noise.setVolume(v)
+  )
+  bindSegmented(el.focusMode, 'focusMode', applyFocusMode)
+  bindSegmented(el.checkpointMinutes, 'checkpointMinutes', setupCheckpoints)
+  el.pauseWhenAway.checked = settings.pauseWhenAway
+  el.pauseWhenAway.addEventListener('change', () => {
+    settings.pauseWhenAway = el.pauseWhenAway.checked
+    saveSettings(settings)
+  })
 
   bindSlider(el.pitchSlider, el.pitchValue, 'pitch', (v) => v.toFixed(1), (v) => engine.update({ pitch: v }))
   bindSlider(el.volumeSlider, el.volumeValue, 'volume', (v) => `${Math.round(v * 100)}%`, (v) =>
@@ -446,6 +498,10 @@ function bindSettings() {
     view.autoScroll = settings.autoScroll
     engine.update({ rate: settings.rate, pitch: settings.pitch, volume: settings.volume })
     populateVoices(engine.getVoices())
+    setNoise(settings.noise)
+    noise.setVolume(settings.noiseVolume)
+    applyFocusMode()
+    setupCheckpoints()
     toast('Settings reset')
   })
 
@@ -467,7 +523,7 @@ function bindSlider(input, output, key, format, onChange) {
 function bindSegmented(container, key, onChange) {
   const buttons = [...container.querySelectorAll('button')]
   const sync = () => {
-    for (const b of buttons) b.setAttribute('aria-checked', String(b.dataset.value === settings[key]))
+    for (const b of buttons) b.setAttribute('aria-checked', String(b.dataset.value === String(settings[key])))
   }
   for (const button of buttons) {
     button.addEventListener('click', () => {
@@ -483,7 +539,11 @@ function bindSegmented(container, key, onChange) {
 
 function syncSettingsUi() {
   el.localOnly.checked = settings.localVoicesOnly
+  el.showAllVoices.checked = settings.showAllVoices
   el.autoScroll.checked = settings.autoScroll
+  el.pauseWhenAway.checked = settings.pauseWhenAway
+  el.noiseVolume.value = String(settings.noiseVolume)
+  el.noiseVolumeValue.textContent = `${Math.round(settings.noiseVolume * 100)}%`
   el.rateSlider.value = String(settings.rate)
   el.rateValue.textContent = `${Number(settings.rate).toFixed(2)}×`
   el.pitchSlider.value = String(settings.pitch)
@@ -496,7 +556,9 @@ function syncSettingsUi() {
   el.lineHeightValue.textContent = Number(settings.lineHeight).toFixed(2)
   el.columnWidth.value = String(settings.columnWidth)
   el.columnWidthValue.textContent = `${settings.columnWidth}ch`
-  for (const container of [el.highlightMode, el.themeMode, el.fontFamily]) container._sync?.()
+  for (const container of [el.highlightMode, el.themeMode, el.fontFamily, el.noiseColour, el.focusMode, el.checkpointMinutes]) {
+    container._sync?.()
+  }
 }
 
 function applyTheme() {
@@ -516,21 +578,8 @@ function applyTypography() {
 
 function populateVoices(voices) {
   const all = voices || []
-  const local = all.filter((v) => v.localService)
-  // Fall back to the full list if this browser reports no local voices at all,
-  // otherwise the dropdown would be empty and nothing could be spoken.
-  const usable = settings.localVoicesOnly && local.length ? local : all
-
-  const uiLang = (navigator.language || 'en-US').toLowerCase()
-  const rank = (voice) => {
-    const lang = (voice.lang || '').toLowerCase().replace('_', '-')
-    if (lang === uiLang) return 0
-    if (lang.split('-')[0] === uiLang.split('-')[0]) return 1
-    return 2
-  }
-  const sorted = [...usable].sort(
-    (a, b) => rank(a) - rank(b) || (a.lang || '').localeCompare(b.lang || '') || a.name.localeCompare(b.name)
-  )
+  const usable = filterVoices(all, { localOnly: settings.localVoicesOnly, showAll: settings.showAllVoices })
+  const sorted = sortVoices(usable, navigator.language || 'en-US')
 
   el.voiceSelect.textContent = ''
   const groups = new Map()
@@ -544,7 +593,9 @@ function populateVoices(voices) {
     }
     const option = document.createElement('option')
     option.value = voice.voiceURI
-    option.textContent = voice.localService ? voice.name : `${voice.name} (online)`
+    const kind = classifyVoice(voice)
+    const tag = !voice.localService ? ' (online)' : kind === 'eloquence' ? ' (robotic)' : kind === 'novelty' ? ' (novelty)' : ''
+    option.textContent = voice.name + tag
     groups.get(key).appendChild(option)
   }
 
@@ -560,13 +611,138 @@ function populateVoices(voices) {
     }
   }
 
-  const hidden = all.length - usable.length
-  el.voiceHint.textContent = local.length
-    ? `${usable.length} voice${usable.length === 1 ? '' : 's'} available` +
-      (hidden > 0 ? `, ${hidden} online voice${hidden === 1 ? '' : 's'} hidden.` : '.') +
-      ' macOS ships extra voices under System Settings › Accessibility › Spoken Content.'
-    : 'No offline voices reported by this browser.'
+  const robotic = all.filter((v) => classifyVoice(v) !== 'natural').length
+  const online = all.filter((v) => !v.localService).length
+  const parts = [`${sorted.length} voice${sorted.length === 1 ? '' : 's'} listed.`]
+  if (!settings.showAllVoices && robotic) {
+    parts.push(`${robotic} robotic and novelty voices are hidden: they were built for screen readers and for fun, not for listening to a book.`)
+  }
+  if (settings.localVoicesOnly && online) parts.push(`${online} online voice${online === 1 ? '' : 's'} hidden.`)
+  parts.push(
+    'For noticeably better voices, download the Enhanced or Premium versions in System Settings › Accessibility › Spoken Content › System Voice › Manage Voices, then restart the browser. Safari also offers the Siri voices; Chrome does not.'
+  )
+  el.voiceHint.textContent = all.length ? parts.join(' ') : 'No voices reported by this browser.'
   el.voiceSelect.disabled = !sorted.length
+}
+
+/** Say one sentence in the chosen voice, without touching the reading position. */
+function previewVoice() {
+  if (!isSpeechSupported()) return
+  const voice = engine.getVoices().find((v) => v.voiceURI === settings.voiceURI)
+  if (!voice) return
+  if (engine.state === 'playing') engine.pause()
+  window.speechSynthesis.cancel()
+  const utterance = new SpeechSynthesisUtterance(PREVIEW_SENTENCE)
+  utterance.voice = voice
+  utterance.lang = voice.lang || ''
+  utterance.rate = settings.rate
+  utterance.pitch = settings.pitch
+  utterance.volume = settings.volume
+  window.speechSynthesis.speak(utterance)
+}
+
+/* ─────────────────────────────── focus tools ─────────────────────────────── */
+
+function setNoise(colour) {
+  settings.noise = NOISE_COLOURS.includes(colour) ? colour : 'off'
+  saveSettings(settings)
+  noise.setVolume(settings.noiseVolume)
+  noise.setColour(settings.noise)
+  el.noiseColour._sync?.()
+  updateNoiseButton()
+}
+
+function cycleNoise() {
+  const next = NOISE_COLOURS[(NOISE_COLOURS.indexOf(settings.noise) + 1) % NOISE_COLOURS.length]
+  setNoise(next)
+  toast(next === 'off' ? 'Background noise off' : `${next[0].toUpperCase()}${next.slice(1)} noise`, 'info', 1200)
+}
+
+function updateNoiseButton() {
+  el.btnNoise.dataset.colour = settings.noise
+  el.btnNoise.setAttribute('aria-pressed', String(settings.noise !== 'off'))
+  el.btnNoise.title = settings.noise === 'off' ? 'Background noise (N)' : `${settings.noise} noise on (N to change)`
+}
+
+function applyFocusMode() {
+  reader.setFocusMode(settings.focusMode)
+  pageView.setFocusMode(settings.focusMode)
+}
+
+function cycleFocusMode() {
+  const modes = ['off', 'sentence', 'paragraph']
+  settings.focusMode = modes[(modes.indexOf(settings.focusMode) + 1) % modes.length]
+  saveSettings(settings)
+  el.focusMode._sync?.()
+  applyFocusMode()
+  toast({ off: 'Dimming off', sentence: 'Dim all but the sentence', paragraph: 'Dim all but the paragraph' }[settings.focusMode], 'info', 1200)
+}
+
+/** Play/pause from the user, honouring a pending rewind from a missed check-in. */
+function userToggle() {
+  if (engine.state !== 'playing' && rewindTo >= 0 && current) {
+    const target = rewindTo
+    rewindTo = -1
+    engine.stop()
+    engine.play(target)
+    return
+  }
+  engine.toggle()
+}
+
+/** Pause and remember the start of the current sentence for the next play. */
+function pauseAndRewind(reason) {
+  if (engine.state !== 'playing' || !current) return
+  const sentence = engine.sentenceIndex >= 0 ? current.model.sentences[engine.sentenceIndex] : null
+  const target = sentence ? sentence.start : engine.charIndex
+  engine.pause()
+  rewindTo = target // set after pause(): the state handler clears it on 'playing' only
+  toast(reason, 'info', 5000)
+}
+
+function setupCheckpoints() {
+  checkpoints?.stop()
+  clearInterval(checkpointTimer)
+  el.checkpoint.hidden = true
+  const minutes = Number(settings.checkpointMinutes) || 0
+  if (!minutes) {
+    checkpoints = null
+    return
+  }
+  checkpoints = new Checkpoints({
+    intervalMs: minutes * 60_000,
+    graceMs: 12_000,
+    onPrompt: () => {
+      el.checkpoint.hidden = false
+      el.checkpoint.style.setProperty('--remaining', '1')
+    },
+    onClear: () => {
+      el.checkpoint.hidden = true
+    },
+    onMissed: () => pauseAndRewind('Paused: you seemed to drift. Play resumes from the start of the sentence.'),
+  })
+  if (engine.state === 'playing') checkpoints.start()
+  checkpointTimer = setInterval(() => {
+    if (!checkpoints || engine.state !== 'playing') return
+    checkpoints.tick()
+    if (checkpoints.state === 'prompting') {
+      el.checkpoint.style.setProperty('--remaining', String(checkpoints.remaining() / 12_000))
+    }
+  }, 250)
+}
+
+/** Reading to an empty room is the failure to avoid: pause when the user leaves. */
+function bindAwayGuard() {
+  const away = () => {
+    if (!settings.pauseWhenAway || engine.state !== 'playing') return
+    if (Date.now() < fileDialogUntil) return // our own file picker took focus
+    if (!el.editorOverlay.hidden || !el.settingsOverlay.hidden) return
+    pauseAndRewind('Paused while you were away. Play picks up from the start of the sentence.')
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) away()
+  })
+  window.addEventListener('blur', () => setTimeout(away, 150))
 }
 
 function describeLanguage(tag) {
@@ -593,6 +769,10 @@ function bindEngine() {
     if (state === 'playing') {
       view.autoScroll = settings.autoScroll
       userScrollUntil = 0
+      rewindTo = -1
+      checkpoints?.start()
+    } else {
+      checkpoints?.stop()
     }
     if (state !== 'playing') persistPosition()
   })
@@ -692,7 +872,18 @@ function bindKeyboard() {
     switch (event.key) {
       case ' ':
         event.preventDefault()
-        if (current) engine.toggle()
+        if (current) userToggle()
+        break
+      case 'Enter':
+        if (checkpoints?.acknowledge()) event.preventDefault()
+        break
+      case 'n':
+      case 'N':
+        cycleNoise()
+        break
+      case 'f':
+      case 'F':
+        cycleFocusMode()
         break
       case 'Escape':
         if (overlayOpen) closeOverlays()
@@ -716,6 +907,7 @@ function bindKeyboard() {
         break
       case 'o':
       case 'O':
+        fileDialogUntil = Date.now() + 3000
         el.fileInput.click()
         break
       case 'e':
@@ -826,6 +1018,10 @@ window.echoReader = {
   engine,
   reader,
   pageView,
+  noise,
+  get checkpoints() {
+    return checkpoints
+  },
   get view() {
     return view
   },

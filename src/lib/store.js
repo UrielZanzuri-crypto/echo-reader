@@ -22,6 +22,13 @@ export const DEFAULT_SETTINGS = {
   fontFamily: 'serif', // 'serif' | 'sans' | 'mono'
   columnWidth: 68,
   pdfView: 'page', // 'page' | 'text' -- how PDFs open
+  showAllVoices: false, // include Eloquence and novelty voices in the menu
+  // Focus tools
+  noise: 'off', // 'off' | 'white' | 'pink' | 'brown'
+  noiseVolume: 0.35,
+  focusMode: 'off', // 'off' | 'sentence' | 'paragraph' -- dim everything else
+  checkpointMinutes: 5, // 0 disables the "still reading?" prompts
+  pauseWhenAway: true,
 }
 
 export function loadSettings() {

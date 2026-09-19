@@ -253,6 +253,58 @@ body {
   -webkit-box-decoration-break: clone;
 }
 
+/* ─────────────────────────────── line focus ────────────────────────────── */
+
+.reader .para { transition: opacity 0.25s ease, color 0.25s ease; }
+.reader.focus-paragraph .para:not(.is-active) { opacity: 0.32; }
+/* Sentence mode: everything goes quiet, the active sentence keeps full ink. */
+.reader.focus-sentence .para { color: color-mix(in srgb, var(--fg) 34%, var(--bg)); }
+::highlight(tts-focus) { color: var(--fg); }
+.reader.focus-sentence .hl-sentence { color: var(--fg); }
+
+/* Page view: a veil is drawn per text run, never over the page, so figures stay. */
+.page-marks .mark-veil { background: rgba(255, 255, 255, 0.62); mix-blend-mode: normal; border-radius: 0; }
+
+/* ─────────────────────────────── checkpoint ────────────────────────────── */
+
+.checkpoint {
+  position: fixed;
+  left: 50%;
+  bottom: 104px;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  background: var(--bg-panel);
+  color: var(--fg);
+  box-shadow: var(--shadow);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  animation: rise 0.18s ease;
+}
+.checkpoint[hidden] { display: none; }
+.checkpoint kbd { margin: 0 2px; }
+.checkpoint-bar {
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform-origin: left;
+  transform: scaleX(var(--remaining, 1));
+}
+
+/* Playbar noise button shows its state by colour. */
+#btnNoise[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); }
+.voice-row { display: flex; gap: 6px; align-items: center; }
+.voice-row .btn-icon { width: 28px; height: 28px; }
+.voice-row .btn-icon svg { width: 14px; height: 14px; }
+
 /* ─────────────────────────────── page view ─────────────────────────────── */
 
 .pages {

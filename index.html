@@ -107,8 +107,16 @@
           <div class="playbar-right">
             <label class="field field-voice">
               <span class="field-label">Voice</span>
-              <select id="voiceSelect" aria-label="Voice"></select>
+              <span class="voice-row">
+                <select id="voiceSelect" aria-label="Voice"></select>
+                <button id="btnPreview" class="btn btn-icon" type="button" title="Hear this voice" aria-label="Preview voice">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg>
+                </button>
+              </span>
             </label>
+            <button id="btnNoise" class="btn btn-icon" type="button" title="Background noise (N)" aria-label="Background noise" aria-pressed="false" data-colour="off">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h2l2-5 3 10 3-8 2 5 2-3 2 1h2"/></svg>
+            </button>
             <label class="field field-rate">
               <span class="field-label">Speed <output id="rateValue">1.00×</output></span>
               <input
@@ -168,6 +176,10 @@
               <span>Offline voices only</span>
               <input id="localOnly" type="checkbox" />
             </label>
+            <label class="row row-switch">
+              <span>Show all voices, including robotic and novelty ones</span>
+              <input id="showAllVoices" type="checkbox" />
+            </label>
             <p class="hint" id="voiceHint"></p>
             <label class="row">
               <span>Pitch <output id="pitchValue">1.0</output></span>
@@ -194,6 +206,48 @@
               <span>Auto-scroll to keep up</span>
               <input id="autoScroll" type="checkbox" />
             </label>
+          </section>
+
+          <section class="group">
+            <h3>Focus</h3>
+            <div class="row">
+              <span>Background noise</span>
+              <div class="segmented" id="noiseColour" role="radiogroup" aria-label="Background noise">
+                <button type="button" data-value="off" role="radio">Off</button>
+                <button type="button" data-value="white" role="radio">White</button>
+                <button type="button" data-value="pink" role="radio">Pink</button>
+                <button type="button" data-value="brown" role="radio">Brown</button>
+              </div>
+            </div>
+            <label class="row">
+              <span>Noise volume <output id="noiseVolumeValue">35%</output></span>
+              <input id="noiseVolume" type="range" min="0" max="1" step="0.05" value="0.35" />
+            </label>
+            <div class="row">
+              <span>Dim everything except</span>
+              <div class="segmented" id="focusMode" role="radiogroup" aria-label="Line focus">
+                <button type="button" data-value="off" role="radio">Nothing</button>
+                <button type="button" data-value="sentence" role="radio">Sentence</button>
+                <button type="button" data-value="paragraph" role="radio">Paragraph</button>
+              </div>
+            </div>
+            <div class="row">
+              <span>Ask "still reading?" every</span>
+              <div class="segmented" id="checkpointMinutes" role="radiogroup" aria-label="Attention checkpoints">
+                <button type="button" data-value="0" role="radio">Never</button>
+                <button type="button" data-value="3" role="radio">3 min</button>
+                <button type="button" data-value="5" role="radio">5 min</button>
+                <button type="button" data-value="10" role="radio">10 min</button>
+              </div>
+            </div>
+            <label class="row row-switch">
+              <span>Pause when I switch away</span>
+              <input id="pauseWhenAway" type="checkbox" />
+            </label>
+            <p class="hint">
+              Moderate noise helps inattentive minds (Söderlund et al.); dimming cuts visual
+              crowding; the check-ins catch a wandering mind before the voice reads on alone.
+            </p>
           </section>
 
           <section class="group">
@@ -238,6 +292,8 @@
               <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Speed down / up</dd>
               <dt><kbd>O</kbd> <kbd>E</kbd> <kbd>S</kbd></dt><dd>Open file, edit text, settings</dd>
               <dt><kbd>V</kbd></dt><dd>PDF: switch between pages and text</dd>
+              <dt><kbd>N</kbd> <kbd>F</kbd></dt><dd>Cycle background noise, cycle dimming</dd>
+              <dt><kbd>Enter</kbd></dt><dd>Answer a "still reading?" check</dd>
               <dt><kbd>Click</kbd></dt><dd>Start reading from that word</dd>
             </dl>
           </section>
@@ -251,6 +307,10 @@
 
     <div id="drop" class="dropzone" hidden><div class="dropzone-inner">Drop to read</div></div>
     <div id="toast" class="toast" hidden></div>
+    <button id="checkpoint" class="checkpoint" type="button" hidden>
+      <span class="checkpoint-bar" aria-hidden="true"></span>
+      <span>Still reading? <kbd>Enter</kbd> or tap</span>
+    </button>
     <div id="busy" class="busy" hidden>
       <div class="busy-inner">
         <div class="spinner" aria-hidden="true"></div>

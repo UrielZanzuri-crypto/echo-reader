@@ -28,7 +28,9 @@ export class PageView {
     this.container = container
     this.scroller = scroller
     this.mode = 'both'
+    this.focusMode = 'off'
     this.autoScroll = true
+    this._veiledRange = null
 
     this.doc = null
     this.layout = null
@@ -77,12 +79,14 @@ export class PageView {
       el.setAttribute('aria-label', `Page ${page.number}`)
 
       const canvas = document.createElement('canvas')
+      const veils = document.createElement('div')
+      veils.className = 'page-marks page-veils'
       const marks = document.createElement('div')
       marks.className = 'page-marks'
-      el.append(canvas, marks)
+      el.append(canvas, veils, marks)
       fragment.appendChild(el)
 
-      this._pages.push({ el, canvas, marks, scale: 1, items: [], rendered: false, task: null })
+      this._pages.push({ el, canvas, marks, veils, scale: 1, items: [], rendered: false, task: null })
       this._observer.observe(el)
     })
     this.container.appendChild(fragment)
@@ -109,6 +113,13 @@ export class PageView {
     this.mode = mode
     if (mode === 'off') this.clearHighlight()
     else this.highlight(this._lastSpan, this._lastSentence, { scroll: false })
+  }
+
+  /** @param {'off'|'sentence'|'paragraph'} mode */
+  setFocusMode(mode) {
+    this.focusMode = mode
+    this._veiledRange = null
+    this.highlight(this._lastSpan, this._lastSentence, { scroll: false })
   }
 
   /* ----------------------------------------------------------- sizing */
@@ -139,6 +150,7 @@ export class PageView {
   relayout() {
     if (!this.layout) return
     this._sizePages()
+    this._veiledRange = null
     for (const [index, page] of this._pages.entries()) {
       if (!page.rendered) continue
       page.rendered = false
@@ -187,7 +199,8 @@ export class PageView {
     this._lastSentence = sentenceIndex
     if (!this.doc || !this.layout) return
 
-    this.clearHighlight()
+    this._clearMarks()
+    this._applyVeils(sentenceIndex)
     if (this.mode === 'off') return
 
     const showWord = this.mode === 'word' || this.mode === 'both'
@@ -204,7 +217,49 @@ export class PageView {
   }
 
   clearHighlight() {
+    for (const page of this._pages) {
+      page.marks.textContent = ''
+      page.veils.textContent = ''
+    }
+    this._veiledRange = null
+  }
+
+  _clearMarks() {
     for (const page of this._pages) page.marks.textContent = ''
+  }
+
+  /**
+   * Line focus on a page: veil every text run outside the active sentence or
+   * paragraph. Figures are untouched because veils exist only where text is.
+   * Rebuilt only when the range changes, not on every word.
+   */
+  _applyVeils(sentenceIndex) {
+    const sentence = sentenceIndex >= 0 ? this.doc.sentences[sentenceIndex] : null
+    let range = null
+    if (sentence && this.focusMode === 'sentence') range = sentence
+    else if (sentence && this.focusMode === 'paragraph') range = this.doc.paragraphs[sentence.paragraph]
+
+    const key = range ? `${range.start}:${range.end}` : ''
+    if (key === this._veiledRange) return
+    this._veiledRange = key
+
+    this._pages.forEach((entry) => {
+      entry.veils.textContent = ''
+      if (!range) return
+      const fragment = document.createDocumentFragment()
+      for (const it of entry.items) {
+        const inside = it.end > range.start && it.start < range.end
+        if (inside) continue
+        const box = document.createElement('div')
+        box.className = 'mark-veil'
+        box.style.left = `${it.left}px`
+        box.style.top = `${it.top}px`
+        box.style.width = `${it.width}px`
+        box.style.height = `${it.height}px`
+        fragment.appendChild(box)
+      }
+      entry.veils.appendChild(fragment)
+    })
   }
 
   /** Draw boxes for every text run the range touches; returns the first box. */

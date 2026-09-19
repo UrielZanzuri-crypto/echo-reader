@@ -43,7 +43,7 @@ npm install     # once, needs the network; also vendors pdf.js assets into publi
 npm start       # build, serve at http://localhost:4173, open a browser
 npm stop        # stop the background server
 npm run dev     # development server with hot reload, http://localhost:5173
-npm test        # 47 unit and integration tests, no browser required
+npm test        # 59 unit and integration tests, no browser required
 ```
 
 `npm run build` writes `dist/`, a plain folder of static files that any static
@@ -80,6 +80,50 @@ Voices*. The "Premium" and "Enhanced" entries are worth the download; they appea
 in the app's voice menu after a browser restart. The *Offline voices only* switch
 in Settings hides the browser's cloud voices (Chrome's "Google …" entries), which
 would otherwise send your text to a server.
+
+## Voices: why some sound like a robot
+
+macOS ships three very different kinds of voice, and the browser lists them all
+in one flat array (191 entries on a typical Mac):
+
+| Kind | Examples | What it is | Sound |
+|---|---|---|---|
+| **Vocalizer (Nuance)** | Samantha, Aaron, Daniel, Karen, Moira, Tessa | Recorded-speech synthesis; ships in a *compact* tier, with **Enhanced** and **Premium** tiers to download | Good, and the downloads are noticeably better |
+| **Eloquence** | Eddy, Flo, Grandma, Grandpa, Reed, Rocko, Sandy, Shelley — in every language | A 1990s formant synthesiser added in macOS 14 for screen-reader users who want speed over naturalness | The "crashed robot" |
+| **Novelty** | Zarvox, Trinoids, Bells, Bubbles, Cellos, Bad News… | 1990s Mac toys | Deliberately silly |
+
+Echo Reader hides the last two kinds unless *Show all voices* is switched on in
+Settings, and the speaker button beside the voice menu previews the selection.
+For the best voices: *System Settings › Accessibility › Spoken Content › System
+Voice › Manage Voices…*, download the Enhanced or Premium versions of the ones
+you like, then restart the browser. Safari also exposes the Siri voices; Chrome
+does not.
+
+## Focus tools
+
+Four features for reading with a wandering mind, chosen for the strength of the
+evidence behind them rather than popularity. All in Settings › Focus.
+
+- **Background noise** (white / pink / brown, <kbd>N</kbd>). Moderate broadband
+  noise improves attention and memory in people with inattentive ADHD
+  (Söderlund et al., 2007, 2010; replicated since — the "stochastic resonance"
+  effect). Generated with the Web Audio API, no audio files, still offline.
+  Pink and brown are the same idea with less hiss.
+- **Dimming** (<kbd>F</kbd>): everything except the current sentence or
+  paragraph fades. The same idea as Immersive Reader's Line Focus: less visual
+  crowding, less re-reading. On PDF pages the fade is drawn per text run, so
+  figures stay exactly as they are.
+- **"Still reading?" check-ins** every 3, 5 or 10 minutes. Thought-probe studies
+  (Smallwood & Schooler) show that being asked catches mind-wandering that goes
+  unnoticed otherwise. Answer with <kbd>Enter</kbd> or a tap; no answer for 12 s
+  and reading pauses, resuming from the start of the sentence — so the voice
+  never reads on to an empty room.
+- **Pause when you switch away.** Same failure, caught earlier: leaving the tab
+  or window pauses, and play picks up from the start of the sentence.
+
+Not included, deliberately: binaural beats (meta-analyses find small,
+inconsistent effects) and "bionic" bold-prefix reading (a 2,000-participant
+study found no benefit).
 
 ## How it works
 

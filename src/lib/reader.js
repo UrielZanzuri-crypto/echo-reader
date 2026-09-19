@@ -29,7 +29,10 @@ export class Reader {
     this.scroller = scroller
     this.doc = null
     this.mode = 'both' // 'word' | 'sentence' | 'both' | 'off'
+    /** 'off' | 'sentence' | 'paragraph' -- dim everything except the active one */
+    this.focusMode = 'off'
     this.autoScroll = true
+    this._activeParagraph = -1
 
     /** @type {HTMLElement[]} */
     this._paragraphEls = []
@@ -43,8 +46,10 @@ export class Reader {
     if (this.useCssHighlights) {
       this._wordHighlight = new Highlight()
       this._sentenceHighlight = new Highlight()
+      this._focusHighlight = new Highlight()
       CSS.highlights.set('tts-word', this._wordHighlight)
       CSS.highlights.set('tts-sentence', this._sentenceHighlight)
+      CSS.highlights.set('tts-focus', this._focusHighlight)
     }
   }
 
@@ -55,6 +60,7 @@ export class Reader {
     this._paragraphEls = []
     this._dirtyParagraph = -1
     this.doc = doc
+    this._activeParagraph = -1
     if (!doc) return
 
     const fragment = document.createDocumentFragment()
@@ -76,6 +82,31 @@ export class Reader {
     else this.highlight(this._lastSpan, this._lastSentenceIndex, { scroll: false })
   }
 
+  /** @param {'off'|'sentence'|'paragraph'} mode */
+  setFocusMode(mode) {
+    this.focusMode = mode
+    this.content.classList.toggle('focus-sentence', mode === 'sentence')
+    this.content.classList.toggle('focus-paragraph', mode === 'paragraph')
+    this._applyFocus(this._lastSentenceIndex)
+  }
+
+  /** Mark the active paragraph, and in sentence mode un-dim the active sentence. */
+  _applyFocus(sentenceIndex) {
+    const sentence = sentenceIndex >= 0 && this.doc ? this.doc.sentences[sentenceIndex] : null
+    const paragraph = sentence && this.focusMode !== 'off' ? sentence.paragraph : -1
+    if (paragraph !== this._activeParagraph) {
+      this._paragraphEls[this._activeParagraph]?.classList.remove('is-active')
+      this._paragraphEls[paragraph]?.classList.add('is-active')
+      this._activeParagraph = paragraph
+    }
+    if (!this.useCssHighlights) return
+    this._focusHighlight.clear()
+    if (sentence && this.focusMode === 'sentence') {
+      const range = this._range(sentence.start, sentence.end)
+      if (range) this._focusHighlight.add(range)
+    }
+  }
+
   /**
    * Paint the active span and its sentence.
    * @param {{start:number,end:number}|null} span exactly what is being spoken
@@ -91,8 +122,10 @@ export class Reader {
     const showWord = this.mode === 'word' || this.mode === 'both'
     const showSentence = this.mode === 'sentence' || this.mode === 'both'
     const word = showWord && span && span.end > span.start ? span : null
-    const sentence = showSentence && sentenceIndex >= 0 ? this.doc.sentences[sentenceIndex] : null
+    const needSentence = showSentence || (this.focusMode === 'sentence' && !this.useCssHighlights)
+    const sentence = needSentence && sentenceIndex >= 0 ? this.doc.sentences[sentenceIndex] : null
 
+    this._applyFocus(sentenceIndex)
     if (!word && !sentence) {
       this.clearHighlight()
       return
@@ -109,6 +142,7 @@ export class Reader {
     if (this.useCssHighlights) {
       this._wordHighlight?.clear()
       this._sentenceHighlight?.clear()
+      this._focusHighlight?.clear()
     } else {
       this._restoreParagraph()
     }
