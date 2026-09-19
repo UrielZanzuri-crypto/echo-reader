@@ -625,20 +625,56 @@ function populateVoices(voices) {
   el.voiceSelect.disabled = !sorted.length
 }
 
+let previewTimer = 0
+
 /** Say one sentence in the chosen voice, without touching the reading position. */
 function previewVoice() {
   if (!isSpeechSupported()) return
   const voice = engine.getVoices().find((v) => v.voiceURI === settings.voiceURI)
   if (!voice) return
+  const synth = window.speechSynthesis
   if (engine.state === 'playing') engine.pause()
-  window.speechSynthesis.cancel()
+  synth.cancel()
+  // cancel() during a pause is what wedges Chrome; resume() clears that state.
+  try {
+    synth.resume()
+  } catch {
+    /* ignore */
+  }
+
   const utterance = new SpeechSynthesisUtterance(PREVIEW_SENTENCE)
   utterance.voice = voice
   utterance.lang = voice.lang || ''
   utterance.rate = settings.rate
   utterance.pitch = settings.pitch
   utterance.volume = settings.volume
-  window.speechSynthesis.speak(utterance)
+
+  let started = false
+  utterance.onstart = () => {
+    started = true
+  }
+  utterance.onerror = (event) => {
+    const reason = event.error || 'unknown'
+    if (reason !== 'canceled' && reason !== 'interrupted') reportDeadVoice(voice.name, reason)
+  }
+  synth.speak(utterance)
+
+  // A voice installed after the browser started often appears in the list but
+  // produces nothing. Silence is the only symptom, so watch for it.
+  clearTimeout(previewTimer)
+  previewTimer = setTimeout(() => {
+    if (!started) reportDeadVoice(voice.name, 'silent')
+  }, 3000)
+}
+
+/** One clear explanation for the single most common cause. */
+function reportDeadVoice(name, reason) {
+  console.warn(`[tts] voice "${name}" produced nothing (${reason})`)
+  toast(
+    `"${name}" made no sound. If you installed it just now, quit the browser completely (Cmd-Q) and open it again \u2014 it only reads the voice list at startup.`,
+    'error',
+    9000
+  )
 }
 
 /* ─────────────────────────────── focus tools ─────────────────────────────── */
@@ -698,6 +734,38 @@ function pauseAndRewind(reason) {
   engine.pause()
   rewindTo = target // set after pause(): the state handler clears it on 'playing' only
   toast(reason, 'info', 5000)
+}
+
+let triedAnotherVoice = false
+
+/**
+ * A voice that will not speak should not end the session. Fall back to another
+ * one once, then explain the restart, rather than leaving a dead play button.
+ */
+function recoverFromVoiceFailure() {
+  const failing = settings.voiceURI
+  const failingName = engine.getVoices().find((v) => v.voiceURI === failing)?.name || failing
+  const alternatives = filterVoices(engine.getVoices(), {
+    localOnly: settings.localVoicesOnly,
+    showAll: false,
+  }).filter((v) => v.voiceURI !== failing)
+
+  if (triedAnotherVoice || !alternatives.length) {
+    reportDeadVoice(failingName, 'no response')
+    return
+  }
+  triedAnotherVoice = true
+  const next = alternatives[0]
+  settings.voiceURI = next.voiceURI
+  engine.update({ voiceURI: next.voiceURI })
+  saveSettings(settings)
+  el.voiceSelect.value = next.voiceURI
+  toast(
+    `"${failingName}" did not respond, so I switched to ${next.name}. A newly installed voice needs the browser restarted.`,
+    'error',
+    8000
+  )
+  engine.play(engine.charIndex)
 }
 
 function setupCheckpoints() {
@@ -791,6 +859,10 @@ function bindEngine() {
   })
 
   engine.on('error', ({ error }) => {
+    if (error === 'stalled' || error === 'synthesis-failed' || error === 'synthesis-unavailable') {
+      recoverFromVoiceFailure()
+      return
+    }
     // Browsers refuse to speak until the page has seen a real click or key press.
     const friendly = {
       'not-allowed': 'Press play once to let this browser start speaking.',
@@ -809,6 +881,8 @@ function paint() {
   paintQueued = false
   const position = pendingPosition
   if (!position || !current) return
+  // A real boundary means this voice works; allow a future fallback again.
+  if (!position.estimated && position.wordIndex > 0) triedAnotherVoice = false
 
   // Resume auto-scroll a few seconds after the user last scrolled by hand.
   if (settings.autoScroll && !view.autoScroll && Date.now() > userScrollUntil) {

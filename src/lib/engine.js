@@ -444,6 +444,15 @@ export class TtsEngine {
     this._utterance = utterance
     this._lastEventAt = Date.now()
     this._startTimers()
+    // A cancel() issued while paused leaves Chrome's queue paused for good, and
+    // every later speak() then waits in silence. Clearing it costs nothing.
+    if (this.synth.paused) {
+      try {
+        this.synth.resume()
+      } catch {
+        /* ignore */
+      }
+    }
     try {
       this.synth.speak(utterance)
     } catch (err) {
