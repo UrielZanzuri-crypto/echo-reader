@@ -12,11 +12,15 @@
  * wraps them in the Web Audio API: one four-second buffer per colour, looped.
  */
 
-/** Uniform white noise in [-1, 1]. */
+/**
+ * White noise. Equal energy per hertz means most of it sits in the high
+ * frequencies the ear is most sensitive to, so at matched loudness it is still
+ * the harshest of the three; it is taken down a further 5 dB for comfort.
+ */
 export function whiteNoise(length, random = Math.random) {
   const out = new Float32Array(length)
   for (let i = 0; i < length; i++) out[i] = random() * 2 - 1
-  return out
+  return normalize(out, 0.56)
 }
 
 /** Pink noise (-3 dB per octave): Paul Kellet's "refined" 7-pole approximation. */
@@ -40,7 +44,7 @@ export function pinkNoise(length, random = Math.random) {
     out[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11
     b6 = white * 0.115926
   }
-  return normalize(out)
+  return normalize(out, 1)
 }
 
 /** Brown (red) noise (-6 dB per octave): a leaky integrator over white noise. */
@@ -52,16 +56,21 @@ export function brownNoise(length, random = Math.random) {
     last = (last + 0.02 * white) / 1.02
     out[i] = last * 3.5
   }
-  return normalize(out)
+  return normalize(out, 1)
 }
 
-/** Scale to a 0.9 peak so every colour sits at the same loudness on the slider. */
-function normalize(samples) {
-  let peak = 0
-  for (const s of samples) peak = Math.max(peak, Math.abs(s))
-  if (peak === 0) return samples
-  const gain = 0.9 / peak
-  for (let i = 0; i < samples.length; i++) samples[i] *= gain
+/**
+ * Match colours by loudness (RMS), not by peak. Brown noise is spiky -- a peak
+ * match leaves it whispering while white shouts. Target RMS 0.18 keeps brown's
+ * peaks under 1.0; `comfort` scales a colour down from there.
+ */
+function normalize(samples, comfort = 1) {
+  let energy = 0
+  for (const s of samples) energy += s * s
+  const rms = Math.sqrt(energy / samples.length)
+  if (rms === 0) return samples
+  const gain = (0.18 * comfort) / rms
+  for (let i = 0; i < samples.length; i++) samples[i] = Math.max(-1, Math.min(1, samples[i] * gain))
   return samples
 }
 

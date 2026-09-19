@@ -73,6 +73,15 @@ test('noise: every colour is the right length, bounded, and not silent', () => {
   }
 })
 
+test('noise: colours are matched by loudness, with white held quieter for comfort', () => {
+  const rms = (s) => Math.sqrt(s.reduce((a, x) => a + x * x, 0) / s.length)
+  const white = rms(whiteNoise(50_000, seeded(3)))
+  const pink = rms(pinkNoise(50_000, seeded(3)))
+  const brown = rms(brownNoise(50_000, seeded(3)))
+  assert.ok(Math.abs(pink - brown) < 0.02, `pink ${pink.toFixed(3)} vs brown ${brown.toFixed(3)}`)
+  assert.ok(white < pink * 0.7, `white ${white.toFixed(3)} should be well under pink ${pink.toFixed(3)}`)
+})
+
 test('noise: brown has more low-frequency energy than pink, which has more than white', () => {
   const white = lowFrequencyShare(whiteNoise(50_000, seeded(1)))
   const pink = lowFrequencyShare(pinkNoise(50_000, seeded(1)))
