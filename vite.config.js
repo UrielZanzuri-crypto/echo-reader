@@ -3,6 +3,9 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   // Relative base so the built app works from any folder / any static server.
   base: './',
+  // The Kokoro worker dynamically imports the library, so it must be an ES worker;
+  // the default IIFE format cannot code-split.
+  worker: { format: 'es' },
   resolve: {
     alias: {
       // kokoro-js imports these for its Node path; the browser never uses them.

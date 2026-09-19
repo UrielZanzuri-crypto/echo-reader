@@ -39,7 +39,7 @@ const els = {
   appleVoice: $('appleVoice'), appleRate: $('appleRate'), appleRateOut: $('appleRateOut'),
   speakApple: $('speakApple'), appleStatus: $('appleStatus'),
   kokoroVoice: $('kokoroVoice'), kokoroRate: $('kokoroRate'), kokoroRateOut: $('kokoroRateOut'),
-  dtype: $('dtype'), device: $('device'), speakKokoro: $('speakKokoro'),
+  dtype: $('dtype'), device: $('device'), speakKokoro: $('speakKokoro'), loadModel: $('loadModel'),
   kokoroStatus: $('kokoroStatus'), progressWrap: $('progressWrap'), progress: $('progress'),
 }
 
@@ -133,8 +133,11 @@ els.speakApple.onclick = () => {
 
 /* ------------------------------------------------------------------- Kokoro */
 
-let tts = null
-let loadedWith = ''
+let worker = null
+let ready = false
+let readyFor = ''
+let nextId = 1
+const pending = new Map()
 let audio = null
 
 const KOKORO_VOICES = [
@@ -161,69 +164,116 @@ for (const [value, label] of KOKORO_VOICES) {
  */
 function reconcileDevice() {
   const gpu = els.device.value === 'webgpu'
-  const q8 = els.dtype.value === 'q8'
-  if (gpu && q8) {
-    els.dtype.value = 'fp16'
-    els.kokoroStatus.textContent = 'The 8-bit model only runs on the CPU, so this switched to 16-bit.'
+  if (gpu && els.dtype.value === 'q8') {
+    els.dtype.value = 'fp32'
+    els.kokoroStatus.textContent = 'The 8-bit model only runs on the CPU, so this switched to full quality.'
   }
   els.dtype.querySelector('[value="q8"]').disabled = gpu
 }
-els.device.onchange = reconcileDevice
-els.dtype.onchange = reconcileDevice
+
+function invalidate() {
+  ready = false
+  els.loadModel.disabled = false
+  els.loadModel.textContent = 'Load model'
+  els.kokoroStatus.textContent = 'Model not loaded for this setting yet.'
+}
+
+els.device.onchange = () => {
+  reconcileDevice()
+  invalidate()
+}
+els.dtype.onchange = invalidate
 reconcileDevice()
 
-async function ensureModel() {
-  const want = `${els.dtype.value}:${els.device.value}`
-  if (tts && loadedWith === want) return tts
-
-  const { KokoroTTS } = await import('kokoro-js')
-  els.progressWrap.hidden = false
-  els.kokoroStatus.textContent = 'Loading the model…'
-  const started = performance.now()
-
-  tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
-    dtype: els.dtype.value,
-    device: els.device.value,
-    progress_callback: (p) => {
-      if (p.status === 'progress' && p.total) {
-        els.progress.style.width = `${Math.round((p.loaded / p.total) * 100)}%`
-      }
-    },
-  })
-  loadedWith = want
-  els.progressWrap.hidden = true
-  els.kokoroStatus.textContent = `Model ready in ${((performance.now() - started) / 1000).toFixed(1)}s.`
-  return tts
+function ensureWorker() {
+  if (worker) return worker
+  worker = new Worker(new URL('./kokoro-worker.js', import.meta.url), { type: 'module' })
+  worker.onmessage = ({ data }) => {
+    if (data.type === 'progress') {
+      els.progressWrap.hidden = false
+      els.progress.style.width = `${Math.round((data.loaded / data.total) * 100)}%`
+      return
+    }
+    if (data.type === 'ready') {
+      ready = true
+      readyFor = `${els.dtype.value}:${els.device.value}`
+      els.progressWrap.hidden = true
+      els.loadModel.textContent = 'Model loaded'
+      els.loadModel.disabled = true
+      els.kokoroStatus.textContent = data.ms
+        ? `Model ready in ${(data.ms / 1000).toFixed(1)}s — and the page stayed responsive throughout.`
+        : 'Model ready.'
+      pending.get('load')?.resolve()
+      pending.delete('load')
+      return
+    }
+    if (data.type === 'audio') {
+      pending.get(data.id)?.resolve(data)
+      pending.delete(data.id)
+      return
+    }
+    if (data.type === 'error') {
+      els.progressWrap.hidden = true
+      const waiter = pending.get(data.id) || pending.get('load')
+      waiter?.reject(new Error(data.message))
+      pending.delete(data.id)
+      pending.delete('load')
+    }
+  }
+  return worker
 }
+
+function loadModel() {
+  const want = `${els.dtype.value}:${els.device.value}`
+  if (ready && readyFor === want) return Promise.resolve()
+  ensureWorker()
+  els.loadModel.disabled = true
+  els.loadModel.textContent = 'Loading…'
+  els.kokoroStatus.textContent = 'Loading the model in the background…'
+  return new Promise((resolve, reject) => {
+    pending.set('load', { resolve, reject })
+    worker.postMessage({ type: 'load', models: MODELS, dtype: els.dtype.value, device: els.device.value })
+  })
+}
+
+els.loadModel.onclick = () =>
+  loadModel().catch((e) => {
+    els.kokoroStatus.textContent = `Failed: ${e.message}`
+    invalidate()
+  })
 
 els.speakKokoro.onclick = async () => {
   els.speakKokoro.disabled = true
   try {
-    const model = await ensureModel()
+    await loadModel()
     els.kokoroStatus.textContent = 'Generating…'
-    const started = performance.now()
-    const result = await model.generate(els.paragraph.value, {
-      voice: els.kokoroVoice.value,
-      speed: +els.kokoroRate.value,
+    const id = nextId++
+    const result = await new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject })
+      worker.postMessage({
+        type: 'generate',
+        id,
+        text: els.paragraph.value,
+        voice: els.kokoroVoice.value,
+        speed: +els.kokoroRate.value,
+      })
     })
-    const generation = (performance.now() - started) / 1000
-    const seconds = result.audio.length / result.sampling_rate
+
+    const generation = result.ms / 1000
+    const seconds = result.pcm.length / result.samplingRate
     const summary =
       `${seconds.toFixed(1)}s of speech, generated in ${generation.toFixed(1)}s ` +
-      `(${(seconds / generation).toFixed(1)}× faster than real time) on ${els.device.value}, ` +
-      `${els.dtype.select ? '' : els.dtype.selectedOptions[0].textContent.split('—')[0].trim()}.`
-    window.__lastRun = { generation, seconds, device: els.device.value, dtype: els.dtype.value }
+      `(${(seconds / generation).toFixed(1)}× faster than real time) on ${els.device.value}.`
 
     audio?.pause()
-    const url = URL.createObjectURL(result.toBlob())
+    const url = URL.createObjectURL(wavBlob(result.pcm, result.samplingRate))
     audio = new Audio(url)
     audio.onended = () => URL.revokeObjectURL(url)
     try {
       await audio.play()
       els.kokoroStatus.textContent = summary
     } catch {
-      // Generation succeeded; only playback needs a click on this page.
-      els.kokoroStatus.textContent = `${summary} Click anywhere on the page, then press Speak to hear it.`
+      els.kokoroStatus.textContent = `${summary} Click the page once, then press Speak to hear it.`
     }
   } catch (err) {
     console.error(err)
@@ -232,6 +282,30 @@ els.speakKokoro.onclick = async () => {
   } finally {
     els.speakKokoro.disabled = false
   }
+}
+
+/** Wrap raw samples in a WAV header so an <audio> element can play them. */
+function wavBlob(pcm, rate) {
+  const buffer = new ArrayBuffer(44 + pcm.length * 2)
+  const view = new DataView(buffer)
+  const text = (offset, s) => [...s].forEach((c, i) => view.setUint8(offset + i, c.charCodeAt(0)))
+  text(0, 'RIFF')
+  view.setUint32(4, 36 + pcm.length * 2, true)
+  text(8, 'WAVEfmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true)
+  view.setUint16(22, 1, true)
+  view.setUint32(24, rate, true)
+  view.setUint32(28, rate * 2, true)
+  view.setUint16(32, 2, true)
+  view.setUint16(34, 16, true)
+  text(36, 'data')
+  view.setUint32(40, pcm.length * 2, true)
+  for (let i = 0; i < pcm.length; i++) {
+    const s = Math.max(-1, Math.min(1, pcm[i]))
+    view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+  }
+  return new Blob([buffer], { type: 'audio/wav' })
 }
 
 loadParagraphs()
