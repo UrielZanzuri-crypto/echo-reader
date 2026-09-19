@@ -15,9 +15,11 @@
     "pdf-assets": "node scripts/copy-pdf-assets.mjs",
     "postinstall": "node scripts/copy-pdf-assets.mjs",
     "test": "node --test \"tests/**/*.test.js\"",
-    "package": "bash scripts/package.sh"
+    "package": "bash scripts/package.sh",
+    "fetch-kokoro": "bash scripts/fetch-kokoro.sh"
   },
   "dependencies": {
+    "kokoro-js": "^1.2.1",
     "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {

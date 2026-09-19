@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Voice comparison — Echo Reader</title>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>Which voice reads this better?</h1>
+        <p class="lede">
+          The same paragraph, spoken by your Mac's built-in voice and by Kokoro, a neural
+          engine running locally in this page. Nothing here touches the network.
+          <a href="../index.html">Back to the reader</a>
+        </p>
+      </header>
+
+      <section class="card">
+        <div class="row-between">
+          <label for="paragraph"><strong>Paragraph</strong></label>
+          <span>
+            <select id="source" aria-label="Choose a paragraph"></select>
+            <button id="reload" class="ghost" type="button">Reload from reader</button>
+          </span>
+        </div>
+        <textarea id="paragraph" rows="7" spellcheck="false"></textarea>
+        <p class="hint" id="stats"></p>
+      </section>
+
+      <div class="columns">
+        <section class="card">
+          <h2>Your Mac<span class="tag">built in</span></h2>
+          <label>Voice <select id="appleVoice"></select></label>
+          <label>Speed <input id="appleRate" type="range" min="0.5" max="2" step="0.05" value="1" /><output id="appleRateOut">1.00×</output></label>
+          <button id="speakApple" class="primary" type="button">Speak</button>
+          <p class="status" id="appleStatus">Ready.</p>
+        </section>
+
+        <section class="card">
+          <h2>Kokoro<span class="tag">neural, local</span></h2>
+          <label>Voice <select id="kokoroVoice"></select></label>
+          <label>Speed <input id="kokoroRate" type="range" min="0.5" max="2" step="0.05" value="1" /><output id="kokoroRateOut">1.00×</output></label>
+          <label>Quality
+            <select id="dtype">
+              <option value="q8">8-bit — 88 MB (what we would ship)</option>
+              <option value="fp16">16-bit — 156 MB</option>
+              <option value="fp32" selected>Full — 310 MB (best case)</option>
+            </select>
+          </label>
+          <label>Run on
+            <select id="device">
+              <option value="webgpu" selected>GPU (WebGPU)</option>
+              <option value="wasm">CPU (WASM)</option>
+            </select>
+          </label>
+          <button id="speakKokoro" class="primary" type="button">Speak</button>
+          <p class="status" id="kokoroStatus">Model not loaded yet.</p>
+          <div class="bar" id="progressWrap" hidden><div class="bar-fill" id="progress"></div></div>
+        </section>
+      </div>
+
+      <p class="hint">
+        The first Kokoro run loads the model, which takes a few seconds; after that each
+        paragraph takes about a second. Timings are shown so you can see what it would
+        cost during real reading.
+      </p>
+    </div>
+    <script type="module" src="./kokoro.js"></script>
+  </body>
+</html>

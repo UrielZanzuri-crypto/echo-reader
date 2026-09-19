@@ -1,0 +1,27 @@
+:root { color-scheme: light dark; --fg: #1c1b1a; --bg: #f6f6f4; --panel: #fff; --line: #e0dfdb; --accent: #b4552d; --muted: #6b6a67; }
+@media (prefers-color-scheme: dark) { :root { --fg: #e8e6e3; --bg: #16161a; --panel: #1e1e23; --line: #2d2d34; --accent: #e8875a; --muted: #a3a19c; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }
+.wrap { max-width: 900px; margin: 0 auto; padding: 32px 20px 64px; }
+h1 { font-size: 26px; letter-spacing: -0.02em; margin: 0 0 6px; }
+h2 { font-size: 15px; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
+.tag { font-size: 11px; font-weight: 500; color: var(--muted); border: 1px solid var(--line); border-radius: 20px; padding: 2px 8px; }
+.lede { color: var(--muted); margin: 0 0 24px; }
+a { color: var(--accent); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 720px) { .columns { grid-template-columns: 1fr; } }
+.row-between { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+textarea { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; resize: vertical; }
+label { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 13px; color: var(--muted); }
+select, input[type='range'] { flex: 1; min-width: 0; }
+select { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; font-size: 13px; }
+output { font-variant-numeric: tabular-nums; min-width: 48px; text-align: right; }
+button { font: inherit; font-size: 13px; padding: 8px 14px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; width: 100%; padding: 11px; }
+button.ghost { border-color: transparent; color: var(--muted); }
+button:disabled { opacity: 0.5; cursor: progress; }
+.status { font-size: 12.5px; color: var(--muted); margin: 12px 0 0; min-height: 2.6em; }
+.hint { font-size: 12.5px; color: var(--muted); }
+.bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 8px; }
+.bar-fill { height: 100%; width: 0; background: var(--accent); transition: width 0.15s linear; }

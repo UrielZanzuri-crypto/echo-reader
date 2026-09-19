@@ -17,3 +17,6 @@ build/EchoReader.iconset/
 # Output of npm run package.
 Echo Reader.zip
 build/node-*.tar.gz
+
+# Kokoro spike: vendored model weights, ~440 MB. Re-fetch with scripts/fetch-kokoro.sh
+public/models/
