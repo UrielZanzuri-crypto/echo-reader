@@ -49,6 +49,22 @@ npm test        # 59 unit and integration tests, no browser required
 `npm run build` writes `dist/`, a plain folder of static files that any static
 server can host (`npx serve dist`, `python3 -m http.server -d dist`, …).
 
+### Sending it to another Mac
+
+```bash
+npm run package -- --with-node        # -> "Echo Reader.zip", about 40 MB, nothing to install
+npm run package -- --with-node x64    # for an Intel Mac
+npm run package                       # smaller, but the other Mac needs Node.js installed
+```
+
+The zip holds the launcher, the built site, the tiny server and a read-me — no
+sources, no build step, no network on the other side. `--with-node` puts the
+official Node binary from nodejs.org inside it. On arrival: unzip, keep the
+folder together, double-click `Echo Reader.app`. macOS will say it cannot
+verify the app because it is not notarized — on macOS 15 that is *System
+Settings › Privacy & Security › Open Anyway*; on older versions, right-click ›
+Open. Then allow folder access when asked. The read-me in the zip says the same.
+
 ### Rebuilding the launcher
 
 ```bash

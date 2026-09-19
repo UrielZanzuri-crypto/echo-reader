@@ -29,8 +29,13 @@ read_state() { # read_state <key>
 }
 
 # --- Find Node -------------------------------------------------------------
-# An app launched from Finder gets a bare PATH, so the usual install locations
-# have to be searched by hand before falling back to the login shell.
+# A packaged copy (scripts/package.sh --with-node) carries its own Node, so the
+# machine it lands on needs nothing installed. Otherwise: an app launched from
+# Finder gets a bare PATH, so the usual install locations have to be searched by
+# hand before falling back to the login shell.
+if [ -x "$PROJECT/vendor/node/bin/node" ]; then
+  export PATH="$PROJECT/vendor/node/bin:$PATH"
+fi
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 if ! command -v node >/dev/null 2>&1; then
@@ -50,30 +55,34 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 command -v node >/dev/null 2>&1 ||
-  fail "Node.js was not found. Install it from nodejs.org, then try again."
+  fail "Node.js was not found. Install it from nodejs.org (the macOS installer), then try again."
 
 cd "$PROJECT" || fail "The project folder could not be opened."
 
 { echo; echo "=== launch $(date) ==="; } >>"$LOG" 2>&1
 
-# --- Make sure it is installed and built -----------------------------------
-if [ ! -d node_modules ]; then
-  note "Installing dependencies. This happens only once."
-  npm install --no-audit --no-fund >>"$LOG" 2>&1 ||
-    fail "Installing dependencies failed. See .echo-reader.log in the project folder."
-fi
+# --- Make sure it is built -------------------------------------------------
+# A packaged copy ships dist/ and no sources; it must never try to build.
+if [ -d src ]; then
+  needs_build=0
+  if [ ! -f dist/index.html ]; then
+    needs_build=1
+  elif [ -n "$(find src index.html vite.config.js package.json -newer dist/index.html -print -quit 2>/dev/null)" ]; then
+    needs_build=1 # sources changed since the last build
+  fi
 
-needs_build=0
-if [ ! -f dist/index.html ]; then
-  needs_build=1
-elif [ -n "$(find src index.html vite.config.js package.json -newer dist/index.html -print -quit 2>/dev/null)" ]; then
-  needs_build=1 # sources changed since the last build
-fi
-
-if [ "$needs_build" = 1 ]; then
-  note "Preparing Echo Reader..."
-  npm run build >>"$LOG" 2>&1 ||
-    fail "The build failed. See .echo-reader.log in the project folder."
+  if [ "$needs_build" = 1 ]; then
+    if [ ! -d node_modules ]; then
+      note "Installing dependencies. This happens only once."
+      npm install --no-audit --no-fund >>"$LOG" 2>&1 ||
+        fail "Installing dependencies failed (is the internet reachable?). See .echo-reader.log in the project folder."
+    fi
+    note "Preparing Echo Reader..."
+    npm run build >>"$LOG" 2>&1 ||
+      fail "The build failed. See .echo-reader.log in the project folder."
+  fi
+elif [ ! -f dist/index.html ]; then
+  fail "This copy is incomplete: dist/index.html is missing."
 fi
 
 # --- Reuse a running server, or start one ----------------------------------
