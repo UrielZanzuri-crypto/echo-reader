@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Echo Reader — offline text to speech</title>
+    <meta
+      name="description"
+      content="A local, offline text-to-speech reader with synchronized word highlighting."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%94%8A%3C/text%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div class="app">
+      <!-- ───────────────────────────── top bar ───────────────────────────── -->
+      <header class="topbar">
+        <div class="brand">
+          <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 9v6h4l5 4V5L8 9H4z" />
+            <path class="wave" d="M16.5 8.5a5 5 0 0 1 0 7" />
+            <path class="wave" d="M19 6a8.5 8.5 0 0 1 0 12" />
+          </svg>
+          <div class="brand-text">
+            <strong>Echo Reader</strong>
+            <span id="docTitle" class="doc-title">No document</span>
+          </div>
+        </div>
+
+        <div class="topbar-actions">
+          <button id="btnView" class="btn" type="button" title="Show as plain text (V)" aria-pressed="true" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+            <span>Plain text</span>
+          </button>
+          <button id="btnEditor" class="btn" type="button" title="Paste or edit text (E)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16v4z"/><path d="M14 6l4 4"/></svg>
+            <span>Text</span>
+          </button>
+          <button id="btnOpen" class="btn" type="button" title="Open a .txt, .md or .pdf file (O)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4"/><path d="M8 8l4-4 4 4"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+            <span>Open</span>
+          </button>
+          <button id="btnSettings" class="btn btn-icon" type="button" title="Settings (S)" aria-label="Settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- ──────────────────────────── reading pane ───────────────────────── -->
+      <main id="scroller" class="scroller" tabindex="-1">
+        <article id="content" class="reader" aria-live="off"></article>
+        <div id="pages" class="pages" hidden></div>
+
+        <section id="empty" class="empty">
+          <h1>Read along, out loud.</h1>
+          <p>
+            Paste some text or open a file. Playback uses the high-quality voices already
+            installed on this machine — nothing is uploaded and nothing is downloaded.
+          </p>
+          <div class="empty-actions">
+            <button id="emptyPaste" class="btn btn-primary" type="button">Paste text</button>
+            <button id="emptyOpen" class="btn" type="button">Open .txt, .md or .pdf</button>
+            <button id="emptySample" class="btn btn-ghost" type="button">Try a sample</button>
+          </div>
+          <p class="hint">You can also drop a file anywhere on this window.</p>
+        </section>
+      </main>
+
+      <!-- ────────────────────────── playback controls ────────────────────── -->
+      <footer class="playbar">
+        <div
+          id="progress"
+          class="progress"
+          role="slider"
+          tabindex="0"
+          aria-label="Playback position"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+        >
+          <div id="progressFill" class="progress-fill"></div>
+          <div id="progressKnob" class="progress-knob"></div>
+        </div>
+
+        <div class="playbar-row">
+          <div class="playbar-left">
+            <span id="timeLabel" class="time">--:--</span>
+            <span id="statusLabel" class="status">Ready</span>
+          </div>
+
+          <div class="transport">
+            <button id="btnPrev" class="btn btn-icon" type="button" title="Previous sentence (←)" aria-label="Previous sentence">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L9 12l9 6V6z"/><path d="M6 5v14"/></svg>
+            </button>
+            <button id="btnPlay" class="btn btn-play" type="button" title="Play / pause (Space)" aria-label="Play">
+              <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8V4z"/></svg>
+              <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4v16M16 4v16"/></svg>
+            </button>
+            <button id="btnStop" class="btn btn-icon" type="button" title="Stop (Esc)" aria-label="Stop">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+            </button>
+            <button id="btnNext" class="btn btn-icon" type="button" title="Next sentence (→)" aria-label="Next sentence">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l9 6-9 6V6z"/><path d="M18 5v14"/></svg>
+            </button>
+          </div>
+
+          <div class="playbar-right">
+            <label class="field field-voice">
+              <span class="field-label">Voice</span>
+              <select id="voiceSelect" aria-label="Voice"></select>
+            </label>
+            <label class="field field-rate">
+              <span class="field-label">Speed <output id="rateValue">1.00×</output></span>
+              <input
+                id="rateSlider"
+                type="range"
+                min="0.5"
+                max="3"
+                step="0.05"
+                value="1"
+                aria-label="Playback speed"
+              />
+            </label>
+          </div>
+        </div>
+      </footer>
+    </div>
+
+    <!-- ───────────────────────────── text editor ─────────────────────────── -->
+    <div id="editorOverlay" class="overlay" hidden>
+      <div class="sheet sheet-editor" role="dialog" aria-modal="true" aria-label="Paste text">
+        <header class="sheet-head">
+          <h2>Paste or edit text</h2>
+          <button class="btn btn-icon sheet-close" type="button" data-close aria-label="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </header>
+        <textarea
+          id="editorText"
+          class="editor-text"
+          placeholder="Paste anything you want read aloud…"
+          spellcheck="false"
+        ></textarea>
+        <footer class="sheet-foot">
+          <span id="editorStats" class="hint"></span>
+          <div class="sheet-foot-actions">
+            <button id="editorClear" class="btn btn-ghost" type="button">Clear</button>
+            <button id="editorApply" class="btn btn-primary" type="button">Read this</button>
+          </div>
+        </footer>
+      </div>
+    </div>
+
+    <!-- ───────────────────────────── settings ────────────────────────────── -->
+    <div id="settingsOverlay" class="overlay" hidden>
+      <aside class="sheet sheet-settings" role="dialog" aria-modal="true" aria-label="Settings">
+        <header class="sheet-head">
+          <h2>Settings</h2>
+          <button class="btn btn-icon sheet-close" type="button" data-close aria-label="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </header>
+
+        <div class="sheet-body">
+          <section class="group">
+            <h3>Voice</h3>
+            <label class="row row-switch">
+              <span>Offline voices only</span>
+              <input id="localOnly" type="checkbox" />
+            </label>
+            <p class="hint" id="voiceHint"></p>
+            <label class="row">
+              <span>Pitch <output id="pitchValue">1.0</output></span>
+              <input id="pitchSlider" type="range" min="0" max="2" step="0.1" value="1" />
+            </label>
+            <label class="row">
+              <span>Volume <output id="volumeValue">100%</output></span>
+              <input id="volumeSlider" type="range" min="0" max="1" step="0.05" value="1" />
+            </label>
+          </section>
+
+          <section class="group">
+            <h3>Highlighting</h3>
+            <div class="row">
+              <span>Highlight</span>
+              <div class="segmented" id="highlightMode" role="radiogroup" aria-label="Highlight mode">
+                <button type="button" data-value="word" role="radio">Word</button>
+                <button type="button" data-value="sentence" role="radio">Sentence</button>
+                <button type="button" data-value="both" role="radio">Both</button>
+                <button type="button" data-value="off" role="radio">Off</button>
+              </div>
+            </div>
+            <label class="row row-switch">
+              <span>Auto-scroll to keep up</span>
+              <input id="autoScroll" type="checkbox" />
+            </label>
+          </section>
+
+          <section class="group">
+            <h3>Reading</h3>
+            <div class="row">
+              <span>Theme</span>
+              <div class="segmented" id="themeMode" role="radiogroup" aria-label="Theme">
+                <button type="button" data-value="system" role="radio">Auto</button>
+                <button type="button" data-value="light" role="radio">Light</button>
+                <button type="button" data-value="sepia" role="radio">Sepia</button>
+                <button type="button" data-value="dark" role="radio">Dark</button>
+              </div>
+            </div>
+            <div class="row">
+              <span>Typeface</span>
+              <div class="segmented" id="fontFamily" role="radiogroup" aria-label="Typeface">
+                <button type="button" data-value="serif" role="radio">Serif</button>
+                <button type="button" data-value="sans" role="radio">Sans</button>
+                <button type="button" data-value="mono" role="radio">Mono</button>
+              </div>
+            </div>
+            <label class="row">
+              <span>Text size <output id="fontSizeValue">20px</output></span>
+              <input id="fontSize" type="range" min="14" max="34" step="1" value="20" />
+            </label>
+            <label class="row">
+              <span>Line height <output id="lineHeightValue">1.7</output></span>
+              <input id="lineHeight" type="range" min="1.3" max="2.2" step="0.05" value="1.7" />
+            </label>
+            <label class="row">
+              <span>Column width <output id="columnWidthValue">68ch</output></span>
+              <input id="columnWidth" type="range" min="45" max="95" step="1" value="68" />
+            </label>
+          </section>
+
+          <section class="group">
+            <h3>Keyboard</h3>
+            <dl class="keys">
+              <dt><kbd>Space</kbd></dt><dd>Play / pause</dd>
+              <dt><kbd>Esc</kbd></dt><dd>Stop, or close a panel</dd>
+              <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next sentence</dd>
+              <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Speed down / up</dd>
+              <dt><kbd>O</kbd> <kbd>E</kbd> <kbd>S</kbd></dt><dd>Open file, edit text, settings</dd>
+              <dt><kbd>V</kbd></dt><dd>PDF: switch between pages and text</dd>
+              <dt><kbd>Click</kbd></dt><dd>Start reading from that word</dd>
+            </dl>
+          </section>
+
+          <section class="group">
+            <button id="btnReset" class="btn btn-ghost" type="button">Reset settings</button>
+          </section>
+        </div>
+      </aside>
+    </div>
+
+    <div id="drop" class="dropzone" hidden><div class="dropzone-inner">Drop to read</div></div>
+    <div id="toast" class="toast" hidden></div>
+    <div id="busy" class="busy" hidden>
+      <div class="busy-inner">
+        <div class="spinner" aria-hidden="true"></div>
+        <p id="busyLabel">Working…</p>
+      </div>
+    </div>
+
+    <input id="fileInput" type="file" accept=".txt,.md,.markdown,.text,.csv,.log,.pdf,text/plain,application/pdf" hidden />
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
