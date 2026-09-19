@@ -31,6 +31,11 @@ test('voices: the default list hides the bad tiers, showAll brings them back', (
   assert.equal(filterVoices(online).length, 1)
 })
 
+test('voices: downloaded Premium and Enhanced voices come first in their language', () => {
+  const list = [v('Samantha'), v('Ava (Premium)'), v('Evan (Enhanced)'), v('Aaron')]
+  assert.deepEqual(sortVoices(list, 'en-US').map((x) => x.name), ['Ava (Premium)', 'Evan (Enhanced)', 'Aaron', 'Samantha'])
+})
+
 test('voices: sorted with the UI language first, then the same base language', () => {
   const list = [v('Tessa', 'en-ZA'), v('Amélie', 'fr-CA'), v('Samantha', 'en-US'), v('Daniel', 'en-GB'), v('Aaron', 'en-US')]
   assert.deepEqual(sortVoices(list, 'en-US').map((x) => x.name), ['Aaron', 'Samantha', 'Daniel', 'Tessa', 'Amélie'])

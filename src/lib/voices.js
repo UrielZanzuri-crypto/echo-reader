@@ -60,11 +60,21 @@ export function languageRank(voice, uiLang) {
   return 2
 }
 
+/** Downloaded Premium/Enhanced voices outrank the compact ones they replace. */
+export function qualityRank(voice) {
+  const name = String(voice?.name || '').toLowerCase()
+  if (/premium/.test(name)) return 0
+  if (/enhanced/.test(name)) return 1
+  if (/siri/.test(name)) return 0
+  return 2
+}
+
 export function sortVoices(voices, uiLang) {
   return [...voices].sort(
     (a, b) =>
       languageRank(a, uiLang) - languageRank(b, uiLang) ||
       String(a.lang || '').localeCompare(String(b.lang || '')) ||
+      qualityRank(a) - qualityRank(b) ||
       String(a.name || '').localeCompare(String(b.name || ''))
   )
 }
