@@ -19,6 +19,7 @@
  */
 
 import { TtsEngine } from './engine.js'
+import { toSpoken } from './spoken.js'
 
 export const NEURAL_PREFIX = 'kokoro:'
 
@@ -104,6 +105,8 @@ export class NeuralEngine extends TtsEngine {
     this._previewSource = null
     this._chunkStartedAtAudio = 0
     this._chunkDuration = 0
+    /** Spoken form of the chunk playing now, for mapping audio time to text. */
+    this._spoken = null
   }
 
   /* ------------------------------------------------------------- model */
@@ -194,6 +197,10 @@ export class NeuralEngine extends TtsEngine {
     return { model, stretch: rate / model }
   }
 
+  _spokenFor(text) {
+    return toSpoken(text, { math: this.settings.readMath !== false })
+  }
+
   _generate(text) {
     const { model } = this._speeds
     const key = `${this._voiceId}|${model}|${text}`
@@ -220,7 +227,7 @@ export class NeuralEngine extends TtsEngine {
     for (let i = index; i < Math.min(index + LOOKAHEAD, this.doc.chunks.length); i++) {
       const chunk = this.doc.chunks[i]
       const text = this.doc.text.slice(chunk.start, chunk.end)
-      if (/[\p{L}\p{N}]/u.test(text)) this._generate(text).catch(() => {})
+      if (/[\p{L}\p{N}]/u.test(text)) this._generate(this._spokenFor(text).text).catch(() => {})
     }
   }
 
@@ -277,15 +284,17 @@ export class NeuralEngine extends TtsEngine {
     this._chunkStart = start
     const generation = this._generation
 
+    const spoken = this._spokenFor(text)
     try {
       await this._ensureModel()
       if (generation !== this._generation) return
-      const cached = this._cache.has(`${this._voiceId}|${this._speeds.model}|${text}`)
+      const cached = this._cache.has(`${this._voiceId}|${this._speeds.model}|${spoken.text}`)
       if (!cached) this._emit('status', { label: 'Generating speech…' })
-      const audio = await this._generate(text)
+      const audio = await this._generate(spoken.text)
       if (generation !== this._generation || this.state === 'idle') return
       this._emit('status', { label: '' })
       this._prefetch(index + 1)
+      this._spoken = spoken
       this._play(audio, start, chunk.end, generation, () => this._speakChunk(index + 1, 0))
     } catch (err) {
       if (generation !== this._generation) return
@@ -319,7 +328,8 @@ export class NeuralEngine extends TtsEngine {
     if (this.state === 'playing' && ctx.state === 'suspended') ctx.resume().catch(() => {})
 
     // Known duration -> the highlight can pace itself exactly across the chunk.
-    const chars = end - start
+    // Pace over the *spoken* characters: "≤" is one character but half a second.
+    const chars = this._spoken ? this._spoken.text.length : end - start
     if (this._chunkDuration > 0.2) {
       const observed = chars / this._chunkDuration / (this.settings.rate || 1)
       this._charsPerSecond = this._charsPerSecond * 0.6 + observed * 0.4
@@ -332,12 +342,15 @@ export class NeuralEngine extends TtsEngine {
   _startEstimator(limit) {
     this._stopEstimator()
     const start = this._estimateBaseChar
-    const chars = limit - start
+    const spoken = this._spoken
+    const total = spoken ? spoken.text.length : limit - start
     this._estimateTimer = setInterval(() => {
       if (this.state !== 'playing' || !this._ctx || !this._chunkDuration) return
       const elapsed = this._ctx.currentTime - this._chunkStartedAtAudio
       const ratio = Math.min(1, Math.max(0, elapsed / this._chunkDuration))
-      this._report(Math.floor(start + ratio * chars), 0, true, limit)
+      const spokenIndex = Math.floor(ratio * total)
+      const offset = spoken ? spoken.toSource(spokenIndex) : spokenIndex
+      this._report(Math.min(limit, start + offset), 0, true, limit)
     }, TICK_MS)
   }
 
@@ -374,7 +387,7 @@ export class NeuralEngine extends TtsEngine {
   /** Say one sentence outside the reading flow, for the voice picker. */
   async preview(text) {
     await this._ensureModel()
-    const audio = await this._generate(text)
+    const audio = await this._generate(this._spokenFor(text).text)
     const ctx = this._ensureContext()
     if (ctx.state === 'suspended') await ctx.resume().catch(() => {})
     try {

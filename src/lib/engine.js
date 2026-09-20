@@ -28,6 +28,7 @@
  */
 
 import { findSegmentAt, findWordAt } from './segmenter.js'
+import { toSpoken } from './spoken.js'
 
 /** Starting guess for speaking speed at rate 1.0; calibrated against real playback. */
 const BASE_CHARS_PER_SECOND = 14.5
@@ -47,7 +48,7 @@ export class TtsEngine {
     this.state = 'idle'
     this.doc = null
 
-    this.settings = { voiceURI: '', rate: 1, pitch: 1, volume: 1 }
+    this.settings = { voiceURI: '', rate: 1, pitch: 1, volume: 1, readMath: true }
 
     /** Character index where the currently spoken unit starts. */
     this.charIndex = 0
@@ -369,7 +370,10 @@ export class TtsEngine {
     this._chunkIndex = index
     this._chunkStart = start
 
-    const utterance = new SpeechSynthesisUtterance(text)
+    // What the voice says can differ from what is shown (α -> "alpha"); every
+    // reported position is mapped back through `spoken`.
+    const spoken = toSpoken(text, { math: this.settings.readMath !== false })
+    const utterance = new SpeechSynthesisUtterance(spoken.text)
     const voice = this._resolveVoice()
     if (voice) {
       utterance.voice = voice
@@ -399,10 +403,11 @@ export class TtsEngine {
       if (name !== 'word' && name !== 'sentence') return
 
       const local = Number.isFinite(event.charIndex) ? event.charIndex : 0
-      const global = Math.min(start + local, chunk.end)
+      const global = Math.min(start + spoken.toSource(local), chunk.end)
 
       // charLength is the engine's own idea of how much it is about to say.
-      const length = Number.isFinite(event.charLength) ? event.charLength : 0
+      const rawLength = Number.isFinite(event.charLength) ? event.charLength : 0
+      const length = rawLength > 0 ? Math.max(0, spoken.toSourceEnd(local + rawLength) - spoken.toSource(local)) : 0
 
       if (name === 'word') {
         // A real word boundary: this voice supports them, the estimator can stand down.

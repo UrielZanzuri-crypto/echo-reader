@@ -162,3 +162,20 @@ test('pdf: single-column pages are left in top-to-bottom order', () => {
   ]
   assert.deepEqual(orderColumns(lines).map((l) => l.y), [700, 688, 676])
 })
+
+test('pdf: superscripts and subscripts stay on their line and attach to the word', () => {
+  const content = {
+    items: [
+      item('E = mc', 72, 700, { width: 40, height: 10 }),
+      item('2', 112, 704, { width: 4, height: 6 }), // raised, smaller: superscript
+      item('and', 122, 700, { width: 18, height: 10 }),
+      item('σ', 146, 700, { width: 6, height: 10 }),
+      item('x', 152, 697, { width: 4, height: 6 }), // lowered, smaller: subscript
+      item('here.', 162, 700, { width: 28, height: 10 }),
+      item('Next line.', 72, 688, { width: 60, height: 10 }),
+    ],
+  }
+  const { text, items } = extractPage(content)
+  assert.equal(text, 'E = mc² and σ_x here.\nNext line.')
+  assert.deepEqual(items.map((it) => text.slice(it.start, it.end)), ['E = mc', '²', 'and', 'σ', '_x', 'here.', 'Next line.'])
+})

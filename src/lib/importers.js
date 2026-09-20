@@ -159,6 +159,14 @@ export async function importPdf(file, onProgress = () => {}) {
   }
 }
 
+const SUPERSCRIPT_DIGITS = { 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹', '+': '⁺', '-': '⁻', '−': '⁻' }
+
+/** "2" -> "²" so the text view reads naturally; anything else -> "^x". */
+function superscriptOf(s) {
+  if ([...s].every((c) => SUPERSCRIPT_DIGITS[c])) return [...s].map((c) => SUPERSCRIPT_DIGITS[c]).join('')
+  return `^${s}`
+}
+
 /** Plain-text view of a page, for tests and for callers without geometry needs. */
 export function pageToText(content) {
   return extractPage(content).text
@@ -186,13 +194,24 @@ export function extractPage(content) {
   for (const item of raw) {
     const [, , , scaleY, x, y] = item.transform
     const height = Math.abs(item.height || scaleY) || 10
-    const part = { x, y, width: item.width || 0, height, str: item.str }
+    const part = { x, y, width: item.width || 0, height, str: item.str, script: '' }
 
-    // Same line if the baselines are within a third of the glyph height.
-    const line = lines.find((l) => Math.abs(l.y - y) <= Math.max(2, height * 0.35))
+    // Same line if the baselines are within a third of the line's glyph height.
+    // A smaller run sitting a little above or below the baseline is a super- or
+    // subscript (mc², σ_x): keep it on the line, and remember which it was.
+    const line = lines.find((l) => {
+      const delta = Math.abs(l.y - y)
+      if (delta <= Math.max(2, Math.max(l.height, height) * 0.35)) return true
+      return height < l.height * 0.8 && delta <= l.height * 0.6
+    })
     if (line) {
+      const delta = Math.abs(line.y - y)
+      // Smaller glyphs shifted off the baseline by more than a hair are scripts.
+      if (height < line.height * 0.8 && delta > Math.max(1, line.height * 0.15)) {
+        part.script = y > line.y ? 'super' : 'sub'
+      }
       line.parts.push(part)
-      line.height = Math.max(line.height, height)
+      if (!part.script) line.height = Math.max(line.height, height)
     } else {
       lines.push({ y, height, parts: [part] })
     }
@@ -214,15 +233,18 @@ export function extractPage(content) {
         prevEndedWithSpace = true // a whitespace-only run still separates words
         continue
       }
-      if (text) {
+      // Scripts attach to the word before them: "mc" + "2" -> "mc²", "σ" + "x" -> "σ_x".
+      const marker = part.script === 'super' ? superscriptOf(trimmed) : part.script === 'sub' ? `_${trimmed}` : ''
+      if (text && !marker) {
         const gap = cursorX === null ? 0 : part.x - cursorX
         const needsSpace = prevEndedWithSpace || /^\s/.test(cleaned) || gap > line.height * 0.18
         if (needsSpace) text += ' '
       }
-      items.push({ start: text.length, end: text.length + trimmed.length, x: part.x, y: part.y, w: part.width, h: part.height })
-      text += trimmed
+      const emitted = marker || trimmed
+      items.push({ start: text.length, end: text.length + emitted.length, x: part.x, y: part.y, w: part.width, h: part.height })
+      text += emitted
       cursorX = part.x + part.width
-      prevEndedWithSpace = /\s$/.test(cleaned)
+      prevEndedWithSpace = marker ? true : /\s$/.test(cleaned)
     }
     if (text) rendered.push({ text, items, y: line.y, height: line.height })
   }

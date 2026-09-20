@@ -330,3 +330,35 @@ test('engine: chunks with no pronounceable characters are skipped', async () => 
   assert.ok(!synth.spoken.some((t) => t.trim() === '***'), 'a rule should never be read aloud')
   assert.ok(synth.spoken.some((t) => t.includes('More real words')))
 })
+
+test('engine: boundaries on the spoken form land on the source symbols', async () => {
+  // "α + β ≤ γ" is spoken as "alpha + beta less than or equal to gamma"; a boundary
+  // inside "alpha" must highlight the α in the document, not some other character.
+  const doc = makeDoc('Take α + β ≤ γ and x² here.')
+  const synth = new FakeSynth('full', 2)
+  const engine = new TtsEngine(synth)
+  engine.setDocument(doc)
+
+  const spans = await record(engine, doc, 3000)
+  engine.stop()
+
+  const texts = spans.map((s) => s.text)
+  assert.ok(synth.spoken[0].includes('alpha'), `spoke "${synth.spoken[0]}"`)
+  assert.ok(synth.spoken[0].includes('squared'), 'x² should be spoken as squared')
+  assert.ok(texts.includes('α'), `α never highlighted: ${texts.join(' | ')}`)
+  assert.ok(texts.includes('β') && texts.includes('γ'), `β/γ never highlighted: ${texts.join(' | ')}`)
+  assert.ok(texts.includes('≤'), `≤ never highlighted: ${texts.join(' | ')}`)
+  assert.ok(texts.includes('x²') || texts.includes('²'), `x² never highlighted: ${texts.join(' | ')}`)
+  for (let i = 1; i < spans.length; i++) assert.ok(spans[i].start >= spans[i - 1].start, 'positions must not go backwards')
+})
+
+test('engine: readMath=false speaks the raw text', async () => {
+  const doc = makeDoc('α + β.')
+  const synth = new FakeSynth('full', 2)
+  const engine = new TtsEngine(synth)
+  engine.update({ readMath: false })
+  engine.setDocument(doc)
+  await record(engine, doc, 1000)
+  engine.stop()
+  assert.equal(synth.spoken[0], 'α + β.')
+})

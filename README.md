@@ -148,6 +148,24 @@ stays out of the shareable zip unless `npm run package -- --with-voices`.
 A standalone comparison page, `/spike/kokoro.html`, plays the same paragraph
 through both engines side by side.
 
+## Reading equations
+
+Physics PDFs are full of `σ_x ≤ 3 − 2` and `E = mc²`, and voices handle them badly:
+Kokoro's phonemiser silently drops `^`, `_` and a spaced minus, reads `²` as "two",
+and Apple's voices are uneven with symbols. The display stays exactly as extracted;
+what changes is what the voice is *given*, in `src/lib/spoken.js`: Greek letters
+become their names, `x²` becomes "x squared", `σ_x` "sigma sub x", `≤` "less than
+or equal to", `∑` "sum", `ħ` "h bar", a spaced hyphen "minus", `a/b` "a over b"
+(but never `example.com/a`, `9/11/2001` or `and/or`), plus pasted TeX (`\alpha`)
+and Dirac brackets. Every replacement is recorded as a span, so a word boundary or
+an audio-clock position in the spoken text maps back to the source character and
+the highlight lands on the `α` as "alpha" is said. Off: Settings › Voice › "Read
+maths as words".
+
+The PDF extractor also keeps superscripts and subscripts on their line now: a
+smaller run sitting just above or below the baseline is attached to the word
+before it as `²` / `^n` / `_x`, instead of being torn out into a line of its own.
+
 ## Focus tools
 
 Four features for reading with a wandering mind, chosen for the strength of the

@@ -49,6 +49,7 @@ const el = {
   btnPreview: $('btnPreview'),
   btnNoise: $('btnNoise'),
   showAllVoices: $('showAllVoices'),
+  readMath: $('readMath'),
   neuralQuality: $('neuralQuality'),
   noiseColour: $('noiseColour'),
   noiseVolume: $('noiseVolume'),
@@ -135,7 +136,7 @@ function boot() {
   bindEngine()
 
   for (const target of [systemEngine, neuralEngine]) {
-    target.update({ rate: settings.rate, pitch: settings.pitch, volume: settings.volume })
+    target.update({ rate: settings.rate, pitch: settings.pitch, volume: settings.volume, readMath: settings.readMath })
   }
   systemEngine.update({ voiceURI: isNeuralVoice(settings.voiceURI) ? '' : settings.voiceURI })
   if (isNeuralVoice(settings.voiceURI)) neuralEngine.update({ voiceURI: settings.voiceURI })
@@ -457,6 +458,12 @@ function bindSettings() {
     saveSettings(settings)
     populateVoices(engine.getVoices())
   })
+  el.readMath.checked = settings.readMath
+  el.readMath.addEventListener('change', () => {
+    settings.readMath = el.readMath.checked
+    saveSettings(settings)
+    for (const target of [systemEngine, neuralEngine]) target.update({ readMath: settings.readMath })
+  })
   el.showAllVoices.checked = settings.showAllVoices
   el.showAllVoices.addEventListener('change', () => {
     settings.showAllVoices = el.showAllVoices.checked
@@ -552,6 +559,7 @@ function bindSegmented(container, key, onChange) {
 function syncSettingsUi() {
   el.localOnly.checked = settings.localVoicesOnly
   el.showAllVoices.checked = settings.showAllVoices
+  el.readMath.checked = settings.readMath
   el.autoScroll.checked = settings.autoScroll
   el.pauseWhenAway.checked = settings.pauseWhenAway
   el.noiseVolume.value = String(settings.noiseVolume)
