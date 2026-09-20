@@ -67,3 +67,16 @@ test('spoken: math=false is the identity', () => {
   assert.equal(r.text, 'α ≤ β')
   assert.equal(r.toSource(3), 3)
 })
+
+test('spoken: mathematical alphanumeric symbols are folded, not spelled as hex', () => {
+  assert.equal(say('𝐸 = 𝑚𝑐² and 𝛼 + 𝛽 ≤ 𝛾'), 'E equals mc squared and alpha + beta less than or equal to gamma')
+  assert.equal(say('ﬁnite ﬂow'), 'finite flow')
+  assert.equal(say('a\uE0A3b'), 'ab') // private-use glyph from a symbol font: silent
+  // Offsets survive surrogate pairs: "alpha" maps back onto the two-unit 𝛼.
+  const s = 'x 𝛼 y'
+  const r = toSpoken(s)
+  const at = r.text.indexOf('alpha')
+  assert.equal(r.toSource(at), 2)
+  assert.equal(r.toSourceEnd(at + 5), 4)
+  assert.equal(s[r.toSource(r.text.indexOf('y'))], 'y')
+})

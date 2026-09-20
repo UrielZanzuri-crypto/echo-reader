@@ -113,12 +113,41 @@ export function toSpoken(text, options = {}) {
     pendingSpace = true
   }
 
+  /** Record a substitution that must not be padded with spaces (𝑥𝑦 -> xy). */
+  const substitute = (i, j, str) => {
+    const outStart = out.length
+    out += str
+    spans.push({ src: [i, j], out: [outStart, out.length] })
+    pendingSpace = false
+  }
+
   const n = text.length
   let i = 0
   while (i < n) {
-    const ch = text[i]
+    const cp = text.codePointAt(i)
+    const ch = String.fromCodePoint(cp)
+    const len = ch.length
     const prev = i > 0 ? text[i - 1] : ''
-    const next = i + 1 < n ? text[i + 1] : ''
+    const next = i + len < n ? text[i + len] : ''
+
+    // Characters the phonemiser would spell out as "letter 1d465": mathematical
+    // italics/bold/script (𝑥 𝛼 𝐸), ligatures (ﬁ), full-width forms. NFKC folds them
+    // to the plain letter, which then goes through the Greek table like any other.
+    if (cp > 0x2fff && !GREEK[ch] && !SYMBOLS[ch] && !SUPERSCRIPT[ch] && !SUBSCRIPT[ch]) {
+      const folded = ch.normalize('NFKC')
+      if (folded !== ch && folded) {
+        if (GREEK[folded]) replace(i, i + len, GREEK[folded])
+        else substitute(i, i + len, folded)
+        i += len
+        continue
+      }
+      // Private-use glyphs from symbol fonts have no sound worth making.
+      if ((cp >= 0xe000 && cp <= 0xf8ff) || cp >= 0xf0000) {
+        substitute(i, i + len, '')
+        i += len
+        continue
+      }
+    }
 
     // \alpha, \sum ... (pasted TeX)
     if (ch === '\\') {
@@ -218,7 +247,7 @@ export function toSpoken(text, options = {}) {
     }
 
     literal(ch)
-    i++
+    i += len
   }
 
   return finish(text, out, spans)
