@@ -6,7 +6,7 @@
  * -- it does not touch the reader, and it deliberately does none of the work the
  * real integration would need (word timings, streaming, pipelining).
  *
- * Everything is served from this origin: the model lives in public/models and the
+ * Everything is served from this origin: the model lives in models/ and the
  * one URL the library hard-codes is redirected below.
  */
 
@@ -187,7 +187,7 @@ reconcileDevice()
 
 function ensureWorker() {
   if (worker) return worker
-  worker = new Worker(new URL('./kokoro-worker.js', import.meta.url), { type: 'module' })
+  worker = new Worker(new URL('../src/lib/kokoro-worker.js', import.meta.url), { type: 'module' })
   worker.onmessage = ({ data }) => {
     if (data.type === 'progress') {
       els.progressWrap.hidden = false

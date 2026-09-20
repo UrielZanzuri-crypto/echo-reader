@@ -115,6 +115,39 @@ Voice › Manage Voices…*, download the Enhanced or Premium versions of the on
 you like, then restart the browser. Safari also exposes the Siri voices; Chrome
 does not.
 
+## Neural voices (optional)
+
+Apple's voices are built from recorded speech assembled with the same melody
+every sentence, which is what makes long listening flat. The reader can instead
+use **Kokoro-82M**, a small neural text-to-speech model, running entirely on this
+Mac — in a Web Worker, through WebGPU when available. Its voices (Heart, Bella,
+Emma, Michael, …) appear at the top of the voice menu once the weights are
+installed:
+
+```bash
+npm run fetch-kokoro     # ~580 MB into models/, one time, from huggingface.co
+```
+
+Nothing else changes: same play button, same highlight, same focus tools. What
+differs underneath is in `src/lib/neural.js` — speech is generated a chunk ahead
+of playback so there is no gap after the first sentence, and the marker is paced
+by the audio clock against each chunk's known duration, re-anchoring every
+sentence, since the model reports no word boundaries.
+
+Two quality settings: **Full** (310 MB, GPU, best) and **Compact** (88 MB, CPU).
+The 16-bit weights are not offered; they lose precision on WebGPU and it is
+audible. Loading takes a few seconds the first time in a session and never blocks
+the page.
+
+The weights live in `models/`, deliberately outside `public/`: Vite copies
+`public/` into `dist/` on every build, and 580 MB duplicated on each rebuild left
+Spotlight re-indexing over a gigabyte. The folder carries `.metadata_never_index`,
+the static server and the dev server both map `/models/` straight to it, and it
+stays out of the shareable zip unless `npm run package -- --with-voices`.
+
+A standalone comparison page, `/spike/kokoro.html`, plays the same paragraph
+through both engines side by side.
+
 ## Focus tools
 
 Four features for reading with a wandering mind, chosen for the strength of the

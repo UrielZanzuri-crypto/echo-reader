@@ -176,6 +176,13 @@
               <span>Offline voices only</span>
               <input id="localOnly" type="checkbox" />
             </label>
+            <div class="row">
+              <span>Neural voice quality</span>
+              <div class="segmented" id="neuralQuality" role="radiogroup" aria-label="Neural voice quality">
+                <button type="button" data-value="fp32" role="radio" title="310 MB, runs on the GPU">Full</button>
+                <button type="button" data-value="q8" role="radio" title="88 MB, runs on the CPU">Compact</button>
+              </div>
+            </div>
             <label class="row row-switch">
               <span>Show all voices, including robotic and novelty ones</span>
               <input id="showAllVoices" type="checkbox" />

@@ -156,20 +156,41 @@ async function send(req, res, requested) {
   }
 }
 
-/** Take the first free port in the range; another copy may already hold one. */
+/**
+ * Take the first free port in the range; another copy may already hold one.
+ * Binds both loopback addresses: Chrome resolves "localhost" to ::1 first and
+ * reports "refused to connect" if only 127.0.0.1 is listening.
+ */
+const server6 = createServer(server.listeners('request')[0])
+server6.on('clientError', (err, socket) => {
+  if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\n\r\n')
+})
+
 function listen(port) {
   return new Promise((resolvePort, reject) => {
-    server.once('error', (err) => {
-      if (err.code === 'EADDRINUSE' && port < LAST_PORT) listen(port + 1).then(resolvePort, reject)
-      else reject(err)
-    })
+    const fail = (err) => {
+      if (err.code === 'EADDRINUSE' && port < LAST_PORT) {
+        server.close()
+        server6.close()
+        listen(port + 1).then(resolvePort, reject)
+      } else reject(err)
+    }
+    server.once('error', fail)
     // Loopback only: this is a personal reader, not a web service.
-    server.listen(port, '127.0.0.1', () => resolvePort(port))
+    server.listen(port, '127.0.0.1', () => {
+      server6.once('error', (err) => {
+        // No IPv6 loopback on this machine: IPv4 alone is fine.
+        if (err.code === 'EADDRNOTAVAIL' || err.code === 'EAFNOSUPPORT') resolvePort(port)
+        else fail(err)
+      })
+      server6.listen(port, '::1', () => resolvePort(port))
+    })
   })
 }
 
 async function shutdown(code = 0) {
   if (advertise) await unlink(STATE_FILE).catch(() => {})
+  server6.close()
   server.close(() => process.exit(code))
   // Do not hang on a browser holding a keep-alive socket open.
   setTimeout(() => process.exit(code), 1000).unref()

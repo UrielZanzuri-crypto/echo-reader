@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS = {
   columnWidth: 68,
   pdfView: 'page', // 'page' | 'text' -- how PDFs open
   showAllVoices: false, // include Eloquence and novelty voices in the menu
+  neuralQuality: 'fp32', // 'fp32' (best, GPU) | 'q8' (88 MB, CPU) for the Kokoro voices
   // Focus tools
   noise: 'off', // 'off' | 'white' | 'pink' | 'brown'
   noiseVolume: 0.35,

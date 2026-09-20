@@ -18,6 +18,7 @@ import { SAMPLE_TEXT, SAMPLE_TITLE } from './lib/sample.js'
 import { classifyVoice, filterVoices, sortVoices, PREVIEW_SENTENCE } from './lib/voices.js'
 import { NoisePlayer, NOISE_COLOURS } from './lib/noise.js'
 import { Checkpoints } from './lib/checkpoints.js'
+import { NeuralEngine, KOKORO_VOICES, NEURAL_PREFIX, isNeuralVoice } from './lib/neural.js'
 
 const $ = (id) => document.getElementById(id)
 
@@ -48,6 +49,7 @@ const el = {
   btnPreview: $('btnPreview'),
   btnNoise: $('btnNoise'),
   showAllVoices: $('showAllVoices'),
+  neuralQuality: $('neuralQuality'),
   noiseColour: $('noiseColour'),
   noiseVolume: $('noiseVolume'),
   noiseVolumeValue: $('noiseVolumeValue'),
@@ -93,7 +95,15 @@ const el = {
 }
 
 const settings = loadSettings()
-const engine = new TtsEngine()
+const systemEngine = new TtsEngine()
+const neuralEngine = new NeuralEngine({
+  modelsUrl: new URL('./models/', document.baseURI).href,
+  quality: loadSettings().neuralQuality || 'fp32',
+})
+/** Whichever engine is behind the play button right now. */
+let engine = systemEngine
+/** Whether the neural weights are actually installed at models/ (checked at boot). */
+let neuralAvailable = false
 const reader = new Reader(el.content, el.scroller)
 const pageView = new PageView(el.pages, el.scroller)
 /** Whichever of the two is on screen; both share one interface. */
@@ -124,12 +134,12 @@ function boot() {
   bindDragAndDrop()
   bindEngine()
 
-  engine.update({
-    voiceURI: settings.voiceURI,
-    rate: settings.rate,
-    pitch: settings.pitch,
-    volume: settings.volume,
-  })
+  for (const target of [systemEngine, neuralEngine]) {
+    target.update({ rate: settings.rate, pitch: settings.pitch, volume: settings.volume })
+  }
+  systemEngine.update({ voiceURI: isNeuralVoice(settings.voiceURI) ? '' : settings.voiceURI })
+  if (isNeuralVoice(settings.voiceURI)) neuralEngine.update({ voiceURI: settings.voiceURI })
+  detectNeuralVoices()
   view.setMode(settings.highlightMode)
   view.autoScroll = settings.autoScroll
   applyFocusMode()
@@ -238,7 +248,7 @@ function updateEmptyState() {
 }
 
 function updateTransport() {
-  const ready = Boolean(current) && isSpeechSupported()
+  const ready = Boolean(current) && (isSpeechSupported() || engine === neuralEngine)
   for (const b of [el.btnPlay, el.btnStop, el.btnPrev, el.btnNext]) b.disabled = !ready
 }
 
@@ -348,9 +358,7 @@ function bindControls() {
   })
 
   el.voiceSelect.addEventListener('change', () => {
-    settings.voiceURI = el.voiceSelect.value
-    engine.update({ voiceURI: settings.voiceURI })
-    saveSettings(settings)
+    selectVoice(el.voiceSelect.value)
     previewVoice()
   })
   el.btnPreview.addEventListener('click', previewVoice)
@@ -456,6 +464,10 @@ function bindSettings() {
     populateVoices(engine.getVoices())
   })
 
+  bindSegmented(el.neuralQuality, 'neuralQuality', (value) => {
+    neuralEngine.setQuality(value)
+    if (engine === neuralEngine) neuralEngine.preload()
+  })
   bindSegmented(el.noiseColour, 'noise', (value) => setNoise(value))
   bindSlider(el.noiseVolume, el.noiseVolumeValue, 'noiseVolume', (v) => `${Math.round(v * 100)}%`, (v) =>
     noise.setVolume(v)
@@ -556,7 +568,7 @@ function syncSettingsUi() {
   el.lineHeightValue.textContent = Number(settings.lineHeight).toFixed(2)
   el.columnWidth.value = String(settings.columnWidth)
   el.columnWidthValue.textContent = `${settings.columnWidth}ch`
-  for (const container of [el.highlightMode, el.themeMode, el.fontFamily, el.noiseColour, el.focusMode, el.checkpointMinutes]) {
+  for (const container of [el.highlightMode, el.themeMode, el.fontFamily, el.noiseColour, el.focusMode, el.checkpointMinutes, el.neuralQuality]) {
     container._sync?.()
   }
 }
@@ -582,6 +594,17 @@ function populateVoices(voices) {
   const sorted = sortVoices(usable, navigator.language || 'en-US')
 
   el.voiceSelect.textContent = ''
+  if (neuralAvailable) {
+    const group = document.createElement('optgroup')
+    group.label = 'Neural — Kokoro, runs on this Mac'
+    for (const v of KOKORO_VOICES) {
+      const option = document.createElement('option')
+      option.value = NEURAL_PREFIX + v.id
+      option.textContent = `${v.name} — ${v.lang === 'en-GB' ? 'UK' : 'US'} ${v.gender}${v.note ? `, ${v.note}` : ''}`
+      group.appendChild(option)
+    }
+    el.voiceSelect.appendChild(group)
+  }
   const groups = new Map()
   for (const voice of sorted) {
     const key = voice.lang || 'other'
@@ -600,14 +623,18 @@ function populateVoices(voices) {
   }
 
   // Keep the saved voice if it still exists; otherwise pick the best match.
-  const wanted = sorted.find((v) => v.voiceURI === settings.voiceURI)
-  const chosen = wanted || sorted.find((v) => v.default) || sorted[0]
-  if (chosen) {
-    el.voiceSelect.value = chosen.voiceURI
-    if (chosen.voiceURI !== settings.voiceURI) {
-      settings.voiceURI = chosen.voiceURI
-      engine.update({ voiceURI: chosen.voiceURI })
-      saveSettings(settings)
+  if (isNeuralVoice(settings.voiceURI) && neuralAvailable) {
+    el.voiceSelect.value = settings.voiceURI
+  } else {
+    const wanted = sorted.find((v) => v.voiceURI === settings.voiceURI)
+    const chosen = wanted || sorted.find((v) => v.default) || sorted[0]
+    if (chosen) {
+      el.voiceSelect.value = chosen.voiceURI
+      if (chosen.voiceURI !== settings.voiceURI) {
+        settings.voiceURI = chosen.voiceURI
+        systemEngine.update({ voiceURI: chosen.voiceURI })
+        saveSettings(settings)
+      }
     }
   }
 
@@ -621,14 +648,85 @@ function populateVoices(voices) {
   parts.push(
     'For noticeably better voices, download the Enhanced or Premium versions in System Settings › Accessibility › Spoken Content › System Voice › Manage Voices, then restart the browser. Safari also offers the Siri voices; Chrome does not.'
   )
+  if (neuralAvailable) {
+    parts.unshift('The neural voices at the top are generated on this Mac by a local model; they sound far more natural but take a few seconds to load.')
+  }
   el.voiceHint.textContent = all.length ? parts.join(' ') : 'No voices reported by this browser.'
-  el.voiceSelect.disabled = !sorted.length
+  el.voiceSelect.disabled = !sorted.length && !neuralAvailable
+}
+
+/* ─────────────────────────────── neural voices ───────────────────────────── */
+
+/** The weights are optional (npm run fetch-kokoro); only offer what is installed. */
+async function detectNeuralVoices() {
+  try {
+    const res = await fetch(new URL('./models/onnx-community/Kokoro-82M-v1.0-ONNX/config.json', document.baseURI), { method: 'HEAD' })
+    neuralAvailable = res.ok
+  } catch {
+    neuralAvailable = false
+  }
+  populateVoices(systemEngine.getVoices())
+  if (isNeuralVoice(settings.voiceURI)) {
+    if (neuralAvailable) setEngine('neural')
+    else selectVoice(systemEngine.getVoices().find((v) => v.default)?.voiceURI || '')
+  }
+}
+
+/** Route a voice choice to the engine that owns it, switching engines if needed. */
+function selectVoice(voiceURI) {
+  settings.voiceURI = voiceURI
+  saveSettings(settings)
+  if (isNeuralVoice(voiceURI)) {
+    neuralEngine.update({ voiceURI })
+    setEngine('neural')
+  } else {
+    systemEngine.update({ voiceURI })
+    setEngine('system')
+  }
+  el.voiceSelect.value = voiceURI
+}
+
+/** Put one engine behind the play button; the other goes quiet. */
+function setEngine(name) {
+  const next = name === 'neural' ? neuralEngine : systemEngine
+  if (next === engine) {
+    if (name === 'neural') neuralEngine.preload()
+    return
+  }
+  const wasPlaying = engine.state === 'playing'
+  const resumeAt = engine.state !== 'idle' ? engine.charIndex : -1
+  engine.stop()
+  engine = next
+  if (current) engine.setDocument(current.model)
+  rewindTo = -1
+  el.app.dataset.engine = name
+  if (name === 'neural') {
+    neuralEngine.preload()
+    setStatus(neuralEngine.modelState === 'ready' ? 'Neural voice ready' : 'Loading the neural voice…')
+  } else {
+    setStatus(current ? 'Ready' : 'No document')
+  }
+  if (resumeAt >= 0) {
+    engine.seek(resumeAt)
+    view.highlight(engine.span, engine.sentenceIndex, { scroll: false })
+    if (wasPlaying) engine.play(resumeAt)
+  }
+  updateTransport()
 }
 
 let previewTimer = 0
 
 /** Say one sentence in the chosen voice, without touching the reading position. */
 function previewVoice() {
+  if (isNeuralVoice(settings.voiceURI)) {
+    if (engine.state === 'playing') engine.pause()
+    setStatus(neuralEngine.modelState === 'ready' ? 'Generating preview…' : 'Loading the neural voice…')
+    neuralEngine
+      .preview(PREVIEW_SENTENCE)
+      .then(() => setStatus(engine.state === 'paused' ? 'Paused' : 'Ready'))
+      .catch((err) => reportDeadVoice(el.voiceSelect.selectedOptions[0]?.textContent || 'Neural voice', err.message))
+    return
+  }
   if (!isSpeechSupported()) return
   const voice = engine.getVoices().find((v) => v.voiceURI === settings.voiceURI)
   if (!voice) return
@@ -743,6 +841,12 @@ let triedAnotherVoice = false
  * one once, then explain the restart, rather than leaving a dead play button.
  */
 function recoverFromVoiceFailure() {
+  if (isNeuralVoice(settings.voiceURI)) {
+    const fallback = filterVoices(systemEngine.getVoices(), { localOnly: true, showAll: false })[0]
+    toast('The neural voice failed, so I switched back to the built-in voice.', 'error', 8000)
+    if (fallback) selectVoice(fallback.voiceURI)
+    return
+  }
   const failing = settings.voiceURI
   const failingName = engine.getVoices().find((v) => v.voiceURI === failing)?.name || failing
   const alternatives = filterVoices(engine.getVoices(), {
@@ -825,10 +929,33 @@ function describeLanguage(tag) {
 /* ────────────────────────────── engine wiring ────────────────────────────── */
 
 function bindEngine() {
-  engine.on('voices', populateVoices)
-  populateVoices(engine.getVoices())
+  systemEngine.on('voices', populateVoices)
+  populateVoices(systemEngine.getVoices())
 
-  engine.on('state', ({ state }) => {
+  neuralEngine.on('loading', ({ phase, ratio, ms, message }) => {
+    if (engine !== neuralEngine) return
+    if (phase === 'loading') setStatus(`Loading the neural voice… ${Math.round(ratio * 100)}%`)
+    else if (phase === 'ready') {
+      setStatus(engine.state === 'playing' ? 'Reading aloud' : 'Neural voice ready')
+      if (ms > 500) toast(`Neural voice ready in ${(ms / 1000).toFixed(1)}s.`, 'info', 2500)
+    } else if (phase === 'failed') {
+      toast(`The neural voice could not load: ${message}`, 'error', 8000)
+      recoverFromVoiceFailure()
+    }
+  })
+  neuralEngine.on('status', ({ label }) => {
+    if (engine === neuralEngine && label) setStatus(label)
+    else if (engine === neuralEngine && engine.state === 'playing') setStatus('Reading aloud')
+  })
+
+  for (const target of [systemEngine, neuralEngine]) bindEngineEvents(target)
+}
+
+function bindEngineEvents(target) {
+  const active = () => target === engine
+
+  target.on('state', ({ state }) => {
+    if (!active()) return
     el.app.dataset.state = state
     el.btnPlay.setAttribute('aria-label', state === 'playing' ? 'Pause' : 'Play')
     setStatus(
@@ -845,20 +972,28 @@ function bindEngine() {
     if (state !== 'playing') persistPosition()
   })
 
-  engine.on('position', (position) => {
+  target.on('position', (position) => {
+    if (!active()) return
     pendingPosition = position
     if (paintQueued) return
     paintQueued = true
     requestAnimationFrame(paint)
   })
 
-  engine.on('end', () => {
+  target.on('end', () => {
+    if (!active()) return
     setStatus('Finished')
     view.clearHighlight()
     persistPosition()
   })
 
-  engine.on('error', ({ error }) => {
+  target.on('error', ({ error, message }) => {
+    if (!active()) return
+    if (error === 'neural-failed') {
+      toast(`Neural voice failed: ${message || 'unknown error'}`, 'error', 7000)
+      recoverFromVoiceFailure()
+      return
+    }
     if (error === 'stalled' || error === 'synthesis-failed' || error === 'synthesis-unavailable') {
       recoverFromVoiceFailure()
       return
@@ -1089,7 +1224,11 @@ boot()
  * from the console: `echoReader.engine.play(0)`, `echoReader.document.model`, etc.
  */
 window.echoReader = {
-  engine,
+  get engine() {
+    return engine
+  },
+  systemEngine,
+  neuralEngine,
   reader,
   pageView,
   noise,
