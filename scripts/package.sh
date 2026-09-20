@@ -16,12 +16,14 @@ set -euo pipefail
 PROJECT="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 NAME="Echo Reader"
 WITH_NODE=0
+WITH_VOICES=0
 ARCH="$(uname -m)"
 NODE_VERSION="v22.12.0"
 
 for arg in "$@"; do
   case "$arg" in
     --with-node) WITH_NODE=1 ;;
+    --with-voices) WITH_VOICES=1 ;;
     --arch) ;;
     arm64|x64|x86_64) ARCH="$arg" ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
@@ -39,6 +41,8 @@ trap 'rm -rf "$(dirname "$STAGE")"' EXIT
 
 cp -R "$NAME.app" "$STAGE/"
 cp -R dist "$STAGE/dist"
+# models/ is deliberately NOT copied: ~580 MB of neural voice weights that the
+# reader does not need. Add --with-voices when you actually want them.
 cp scripts/launcher.sh scripts/serve.mjs scripts/stop.mjs "$STAGE/scripts/"
 cp package.json "$STAGE/"
 cp LICENSE "$STAGE/" 2>/dev/null || true
@@ -53,6 +57,11 @@ if [ "$WITH_NODE" = 1 ]; then
   mkdir -p "$STAGE/vendor/node/bin"
   tar -xzf "$CACHE" -C "$STAGE/vendor/node/bin" --strip-components=2 "node-$NODE_VERSION-darwin-$ARCH/bin/node"
   chmod +x "$STAGE/vendor/node/bin/node"
+fi
+
+if [ "$WITH_VOICES" = 1 ] && [ -d models ]; then
+  echo "Including the neural voice weights (this makes the zip much larger)..."
+  cp -R models "$STAGE/models"
 fi
 
 cat > "$STAGE/READ ME FIRST.txt" <<TXT

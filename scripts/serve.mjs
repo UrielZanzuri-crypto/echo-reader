@@ -30,6 +30,12 @@ const flag = (name, fallback) => {
 const has = (name) => args.includes(`--${name}`)
 
 const PUBLIC_DIR = resolve(ROOT, flag('root', 'dist'))
+/**
+ * The neural voice weights are hundreds of megabytes. Copying them into dist/ on
+ * every build gave Spotlight ~1.2 GB to re-index and brought the machine to its
+ * knees, so they live outside the build and are served straight from here.
+ */
+const MODELS_DIR = resolve(ROOT, 'models')
 const FIRST_PORT = Number(flag('port', 4173))
 const LAST_PORT = FIRST_PORT + 20
 const IDLE_MS = Number(flag('idle-hours', 6)) * 3600_000
@@ -72,10 +78,17 @@ function resolveRequestPath(rawUrl) {
   }
   if (decoded.includes('\0')) return null
 
-  const relative = normalize(decoded).replace(/^(\.\.[/\\])+/, '')
-  const file = join(PUBLIC_DIR, relative)
-  // Refuse anything that escapes dist/, however it was encoded.
-  if (file !== PUBLIC_DIR && !file.startsWith(PUBLIC_DIR + sep)) return null
+  // Strip the leading slash so the prefix test below sees a relative path.
+  const relative = normalize(decoded)
+    .replace(/^(\.\.[/\\])+/, '')
+    .replace(/^[/\\]+/, '')
+
+  // /models/... is served from outside the build; everything else from dist/.
+  const base = relative === 'models' || relative.startsWith(`models${sep}`) ? ROOT : PUBLIC_DIR
+  const file = join(base, relative)
+  const allowed = base === ROOT ? MODELS_DIR : PUBLIC_DIR
+  // Refuse anything that escapes the directory it claimed to be in.
+  if (file !== allowed && !file.startsWith(allowed + sep)) return null
   return file
 }
 
