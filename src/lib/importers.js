@@ -110,7 +110,7 @@ export async function importPdf(file, onProgress = () => {}) {
   })
 
   const pdf = await task.promise
-  const layout = { pages: [] }
+  const layout = { pages: [], fonts: {} }
   let text = ''
 
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
@@ -129,6 +129,12 @@ export async function importPdf(file, onProgress = () => {}) {
     const base = text ? text.length + 2 : 0
     if (extracted.text) text = text ? `${text}\n\n${extracted.text}` : extracted.text
 
+    for (const [family, entry] of Object.entries(extracted.fonts || {})) {
+      const merged = (layout.fonts[family] ??= { count: 0, samples: [], pages: [] })
+      merged.count += entry.count
+      if (!merged.pages.includes(pageNumber)) merged.pages.push(pageNumber)
+      for (const s of entry.samples) if (merged.samples.length < 8 && !merged.samples.includes(s)) merged.samples.push(s)
+    }
     layout.pages.push({
       number: pageNumber,
       width: viewport.width,
@@ -187,8 +193,10 @@ export function pageToText(content) {
  */
 export function extractPage(content) {
   const raw = content.items.filter((item) => typeof item.str === 'string')
-  if (!raw.length) return { text: '', items: [] }
+  if (!raw.length) return { text: '', items: [], fonts: {} }
   const styles = content.styles || {}
+  /** font family -> a few sample strings, so undecodable fonts can be identified */
+  const fontReport = {}
 
   /** @type {{y:number, height:number, parts:object[]}[]} */
   const lines = []
@@ -197,6 +205,7 @@ export function extractPage(content) {
     const height = Math.abs(item.height || scaleY) || 10
     const family = styles[item.fontName]?.fontFamily || ''
     const part = { x, y, width: item.width || 0, height, str: decodeSymbolic(item.str, family), script: '' }
+    noteFont(fontReport, family, item.str)
 
     // Same line if the baselines are within a third of the line's glyph height.
     // A smaller run sitting a little above or below the baseline is a super- or
@@ -250,7 +259,7 @@ export function extractPage(content) {
     }
     if (text) rendered.push({ text, items, y: line.y, height: line.height })
   }
-  if (!rendered.length) return { text: '', items: [] }
+  if (!rendered.length) return { text: '', items: [], fonts: fontReport }
 
   // Line pitch on this page. The lower quartile rather than the median, because
   // paragraph gaps are the minority but are large enough to drag a median up --
@@ -288,7 +297,18 @@ export function extractPage(content) {
       append(line, newParagraph ? '\n\n' : '\n')
     }
   }
-  return { text: out, items }
+  return { text: out, items, fonts: fontReport }
+}
+
+/** Keep a handful of distinctive samples per font: short strings with letters or symbols. */
+function noteFont(report, family, str) {
+  const key = family || '(unnamed)'
+  const entry = (report[key] ??= { count: 0, samples: [] })
+  entry.count++
+  const sample = str.trim().slice(0, 40)
+  if (sample && entry.samples.length < 6 && !entry.samples.includes(sample) && /[^\s\d.,;:()-]/.test(sample)) {
+    entry.samples.push(sample)
+  }
 }
 
 /**

@@ -50,6 +50,7 @@ const el = {
   btnNoise: $('btnNoise'),
   showAllVoices: $('showAllVoices'),
   readMath: $('readMath'),
+  btnFontReport: $('btnFontReport'),
   neuralQuality: $('neuralQuality'),
   noiseColour: $('noiseColour'),
   noiseVolume: $('noiseVolume'),
@@ -363,6 +364,7 @@ function bindControls() {
     previewVoice()
   })
   el.btnPreview.addEventListener('click', previewVoice)
+  el.btnFontReport.addEventListener('click', copyFontReport)
   el.btnNoise.addEventListener('click', cycleNoise)
   el.checkpoint.addEventListener('click', () => checkpoints?.acknowledge())
 
@@ -661,6 +663,36 @@ function populateVoices(voices) {
   }
   el.voiceHint.textContent = all.length ? parts.join(' ') : 'No voices reported by this browser.'
   el.voiceSelect.disabled = !sorted.length && !neuralAvailable
+}
+
+/**
+ * Fonts in the open PDF with sample strings. Equation fonts without a Unicode
+ * map hand us Latin letters for Greek glyphs; this is what identifies them.
+ */
+function fontReportText() {
+  const fonts = current?.layout?.fonts
+  if (!fonts) return ''
+  const lines = [`Font report for "${current.title}"`, '']
+  for (const [family, entry] of Object.entries(fonts).sort((a, b) => b[1].count - a[1].count)) {
+    lines.push(`${family}  (${entry.count} runs, pages ${entry.pages.slice(0, 6).join(',')}${entry.pages.length > 6 ? '…' : ''})`)
+    for (const s of entry.samples) lines.push(`    ${JSON.stringify(s)}`)
+  }
+  return lines.join('\n')
+}
+
+async function copyFontReport() {
+  const text = fontReportText()
+  if (!text) {
+    toast('Open a PDF first; the report describes its fonts.', 'info', 3000)
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    toast('Font report copied. Paste it wherever it is needed.', 'info', 3000)
+  } catch {
+    console.log(text)
+    toast('Could not use the clipboard; the report is in the browser console.', 'error', 5000)
+  }
 }
 
 /* ─────────────────────────────── neural voices ───────────────────────────── */
@@ -1232,6 +1264,7 @@ boot()
  * from the console: `echoReader.engine.play(0)`, `echoReader.document.model`, etc.
  */
 window.echoReader = {
+  fontReport: fontReportText,
   get engine() {
     return engine
   },
