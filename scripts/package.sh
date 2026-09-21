@@ -61,7 +61,12 @@ fi
 
 if [ "$WITH_VOICES" = 1 ] && [ -d models ]; then
   echo "Including the neural voice weights (this makes the zip much larger)..."
-  cp -R models "$STAGE/models"
+  mkdir -p "$STAGE/models"
+  # Everything except the 16-bit weights, which the app does not offer.
+  (cd models && find . -type f ! -name 'model_fp16.onnx' -print0 | while IFS= read -r -d '' f; do
+    mkdir -p "$STAGE/models/$(dirname "$f")"
+    cp "$f" "$STAGE/models/$f"
+  done)
 fi
 
 cat > "$STAGE/READ ME FIRST.txt" <<TXT
@@ -77,6 +82,7 @@ Echo Reader -- read along while your Mac reads aloud
 3. Your browser opens with the reader. Paste text, or open a .txt / .pdf.
 
 $( [ "$WITH_NODE" = 1 ] && echo "Everything needed is inside this folder; nothing to install." || echo "Needs Node.js: install it once from https://nodejs.org (the macOS installer)." )
+$( [ "$WITH_VOICES" = 1 ] && echo "The natural-sounding voices (Heart, Bella, Emma...) are included: pick one at the top of the Voice menu. The first time, the voice takes a few seconds to load." || true )
 Better voices: System Settings > Accessibility > Spoken Content > System Voice >
 Manage Voices, download the Enhanced or Premium ones, restart the browser.
 TXT
