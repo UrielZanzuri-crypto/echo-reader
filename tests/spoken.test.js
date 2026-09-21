@@ -80,3 +80,10 @@ test('spoken: mathematical alphanumeric symbols are folded, not spelled as hex',
   assert.equal(r.toSourceEnd(at + 5), 4)
   assert.equal(s[r.toSource(r.text.indexOf('y'))], 'y')
 })
+
+test('spoken: reference superscripts after a word are silent, exponents are not', () => {
+  assert.equal(say('as shown by Smith¹³ and others.'), 'as shown by Smith and others.')
+  assert.equal(say('HERMES^13 and HRPD^7'), 'HERMES and HRPD')
+  assert.equal(say('the area is 4 km² and r² grows'), 'the area is 4 km squared and r squared grows')
+  assert.equal(say('was measured.² Later'), 'was measured. Later')
+})

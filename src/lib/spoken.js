@@ -163,7 +163,10 @@ export function toSpoken(text, options = {}) {
     if (ch === '^') {
       const m = /^\^(?:\{([^}]{1,24})\}|([A-Za-z0-9+\-]{1,6}))/.exec(text.slice(i, i + 32))
       if (m) {
-        replace(i, i + m[0].length, powerWords(m[1] ?? m[2]))
+        const exp = m[1] ?? m[2]
+        const word = /([\p{L}]+)$/u.exec(text.slice(Math.max(0, i - 12), i))?.[1] || ''
+        if (/^\d+$/.test(exp) && [...word].length >= 3) substitute(i, i + m[0].length, '')
+        else replace(i, i + m[0].length, powerWords(exp))
         i += m[0].length
         continue
       }
@@ -172,7 +175,11 @@ export function toSpoken(text, options = {}) {
       let j = i
       let exp = ''
       while (j < n && SUPERSCRIPT[text[j]]) exp += SUPERSCRIPT[text[j++]]
-      replace(i, j, powerWords(exp))
+      // "matter¹³" or "shown.²" is a reference mark, not an exponent: say nothing.
+      const word = /([\p{L}]+)$/u.exec(text.slice(Math.max(0, i - 12), i))?.[1] || ''
+      const afterPunct = /[.,;:)\]]$/.test(text.slice(0, i))
+      if (/^\d+$/.test(exp) && ([...word].length >= 3 || afterPunct)) substitute(i, j, '')
+      else replace(i, j, powerWords(exp))
       i = j
       continue
     }

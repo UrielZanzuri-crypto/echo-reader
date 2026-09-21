@@ -188,13 +188,15 @@ export function pageToText(content) {
 export function extractPage(content) {
   const raw = content.items.filter((item) => typeof item.str === 'string')
   if (!raw.length) return { text: '', items: [] }
+  const styles = content.styles || {}
 
   /** @type {{y:number, height:number, parts:object[]}[]} */
   const lines = []
   for (const item of raw) {
     const [, , , scaleY, x, y] = item.transform
     const height = Math.abs(item.height || scaleY) || 10
-    const part = { x, y, width: item.width || 0, height, str: item.str, script: '' }
+    const family = styles[item.fontName]?.fontFamily || ''
+    const part = { x, y, width: item.width || 0, height, str: decodeSymbolic(item.str, family), script: '' }
 
     // Same line if the baselines are within a third of the line's glyph height.
     // A smaller run sitting a little above or below the baseline is a super- or
@@ -315,6 +317,7 @@ export function pickTitle(metaTitle, filename) {
  */
 export function orderColumns(lines, gutters = []) {
   if (lines.length < 2) return lines
+  if (gutters.length) return orderByGutters(lines, gutters)
   const out = []
 
   // A line wider than most of the text area cannot be one column of several.
@@ -375,6 +378,46 @@ export function orderColumns(lines, gutters = []) {
 }
 
 /**
+ * Column order when the page's gutters are known: every run is simply left or
+ * right of a gutter, whatever its width or indent. Consecutive lines accumulate
+ * into a block; only a line that crosses a gutter (a title, a wide figure caption)
+ * closes it, at which point each column is emitted whole, top to bottom.
+ */
+function orderByGutters(lines, gutters) {
+  const mids = gutters.map((g) => (g.x0 + g.x1) / 2)
+  const columnOf = ({ x0, x1 }) => {
+    const centre = (x0 + x1) / 2
+    let col = 0
+    while (col < mids.length && centre > mids[col]) col++
+    return col
+  }
+  const crosses = ({ x0, x1 }) => mids.some((m) => x0 < m - 2 && x1 > m + 2)
+
+  const out = []
+  let columns = []
+  const flush = () => {
+    for (const column of columns) if (column) out.push(...column)
+    columns = []
+  }
+
+  for (const line of lines) {
+    const segments = splitAtGutters(line, gutters)
+    const wide = segments.find((seg) => crosses(extent(seg)))
+    if (wide) {
+      flush()
+      out.push(line)
+      continue
+    }
+    for (const seg of segments) {
+      const col = columnOf(extent(seg))
+      ;(columns[col] ??= []).push(seg)
+    }
+  }
+  flush()
+  return out
+}
+
+/**
  * Break a line into pieces wherever the horizontal gap is far wider than a word
  * space, or where consecutive runs sit on opposite sides of a page gutter found by
  * findGutters() -- the latter catches columns whose gutter is no wider than a
@@ -397,6 +440,53 @@ function splitAtGutters(line, gutters = []) {
     cursorX = Math.max(cursorX ?? -Infinity, part.x + part.width)
   }
   return pieces
+}
+
+/**
+ * Adobe Symbol font encoding, for the codes that matter when reading: Greek,
+ * operators, arrows. Codes not listed fall back to their ASCII position.
+ */
+const SYMBOL_FONT = {
+  0x41: 'Α', 0x42: 'Β', 0x43: 'Χ', 0x44: 'Δ', 0x45: 'Ε', 0x46: 'Φ', 0x47: 'Γ', 0x48: 'Η', 0x49: 'Ι',
+  0x4a: 'ϑ', 0x4b: 'Κ', 0x4c: 'Λ', 0x4d: 'Μ', 0x4e: 'Ν', 0x4f: 'Ο', 0x50: 'Π', 0x51: 'Θ', 0x52: 'Ρ',
+  0x53: 'Σ', 0x54: 'Τ', 0x55: 'Υ', 0x56: 'ς', 0x57: 'Ω', 0x58: 'Ξ', 0x59: 'Ψ', 0x5a: 'Ζ',
+  0x61: 'α', 0x62: 'β', 0x63: 'χ', 0x64: 'δ', 0x65: 'ε', 0x66: 'φ', 0x67: 'γ', 0x68: 'η', 0x69: 'ι',
+  0x6a: 'ϕ', 0x6b: 'κ', 0x6c: 'λ', 0x6d: 'μ', 0x6e: 'ν', 0x6f: 'ο', 0x70: 'π', 0x71: 'θ', 0x72: 'ρ',
+  0x73: 'σ', 0x74: 'τ', 0x75: 'υ', 0x76: 'ϖ', 0x77: 'ω', 0x78: 'ξ', 0x79: 'ψ', 0x7a: 'ζ',
+  0x22: '∀', 0x24: '∃', 0x27: '∋', 0x2a: '∗', 0x2d: '−', 0x40: '≅', 0x5c: '∴', 0x5e: '⊥', 0x7e: '∼',
+  0xa2: '′', 0xa3: '≤', 0xa4: '⁄', 0xa5: '∞', 0xa6: 'ƒ', 0xab: '↔', 0xac: '←', 0xad: '↑', 0xae: '→',
+  0xaf: '↓', 0xb0: '°', 0xb1: '±', 0xb2: '″', 0xb3: '≥', 0xb4: '×', 0xb5: '∝', 0xb6: '∂', 0xb7: '•',
+  0xb8: '÷', 0xb9: '≠', 0xba: '≡', 0xbb: '≈', 0xbc: '…', 0xc0: 'ℵ', 0xc1: 'ℑ', 0xc2: 'ℜ', 0xc3: '℘',
+  0xc4: '⊗', 0xc5: '⊕', 0xc6: '∅', 0xc7: '∩', 0xc8: '∪', 0xc9: '⊃', 0xca: '⊇', 0xcb: '⊄', 0xcc: '⊂',
+  0xcd: '⊆', 0xce: '∈', 0xcf: '∉', 0xd0: '∠', 0xd1: '∇', 0xd5: '∏', 0xd6: '√', 0xd7: '⋅', 0xd8: '¬',
+  0xd9: '∧', 0xda: '∨', 0xdb: '⇔', 0xdc: '⇐', 0xdd: '⇑', 0xde: '⇒', 0xdf: '⇓', 0xe1: '⟨', 0xe5: '∑',
+  0xf1: '⟩', 0xf2: '∫',
+}
+
+/**
+ * pdf.js reports glyphs from symbolic fonts that lack a Unicode map as private-use
+ * characters U+F000+code -- the boxes seen in extracted tables and equations. For
+ * the Symbol font the code is the Adobe Symbol encoding (0x61 = α); for any other
+ * font it is almost always plain ASCII. Anything still undecodable is dropped: it
+ * has no sound and no readable shape.
+ */
+export function decodeSymbolic(str, fontFamily = '') {
+  if (!/[\uE000-\uF8FF]/.test(str)) return str
+  const symbol = /symbol/i.test(fontFamily)
+  let out = ''
+  for (const ch of str) {
+    const cp = ch.codePointAt(0)
+    if (cp < 0xe000 || cp > 0xf8ff) {
+      out += ch
+      continue
+    }
+    const code = cp - 0xf000
+    if (code < 0 || code > 0xff) continue
+    if (symbol && SYMBOL_FONT[code]) out += SYMBOL_FONT[code]
+    else if (code >= 0x20 && code <= 0x7e) out += String.fromCharCode(code)
+    else if (!symbol && code >= 0xa0) out += String.fromCharCode(code)
+  }
+  return out
 }
 
 /**

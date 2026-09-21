@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { normalizeText } from '../src/lib/normalize.js'
-import { pageToText, extractPage, orderColumns, findGutters, pickTitle, startsNewBlock, stripMarkdown, isPdf } from '../src/lib/importers.js'
+import { pageToText, extractPage, orderColumns, findGutters, decodeSymbolic, pickTitle, startsNewBlock, stripMarkdown, isPdf } from '../src/lib/importers.js'
 
 /**
  * Build a fake pdf.js text item. pdf.js reports a transform matrix
@@ -206,4 +206,39 @@ test('pdf: findGutters ignores margins and needs text on both sides', () => {
   const g = findGutters(twoCol)
   assert.equal(g.length, 1)
   assert.ok(g[0].x0 >= 270 && g[0].x1 <= 286, JSON.stringify(g))
+})
+
+test('pdf: a right column that starts higher than the left is still read column by column', () => {
+  // First page of a paper: title across both columns, then metadata on the left
+  // (narrow, indented) and the abstract below it, while the right column starts
+  // at the top. Left must be read top to bottom, then right.
+  const items = [item('Neutron diffraction: a primer', 72, 760, { width: 420, height: 24 })]
+  const rightRows = ['powder, time of flight', 'techniques, all of which', 'and magnetic structures.', 'cient brilliance, neutron', 'scattering, for in situ']
+  const leftRows = ['https://doi.org/x', 'Received January 2', 'published online', 'Abstract: Because of the', 'neutron diffraction may be']
+  const leftWidths = [120, 140, 110, 200, 200]
+  for (let r = 0; r < 5; r++) {
+    const y = 700 - r * 14
+    items.push(item(leftRows[r], 72, y, { width: leftWidths[r], height: 10 }))
+    items.push(item(rightRows[r], 300, y, { width: 200, height: 10 }))
+  }
+  // A couple more right-column lines below, where the left column has nothing.
+  items.push(item('pressure experiments', 300, 630, { width: 200, height: 10 }))
+  items.push(item('wave-like neutron', 300, 616, { width: 200, height: 10 }))
+  const lines = pageToText({ items }).split(/\n+/)
+  assert.equal(lines[0], 'Neutron diffraction: a primer')
+  assert.deepEqual(lines.slice(1, 6), leftRows, lines.join(' | '))
+  assert.deepEqual(lines.slice(6), [...rightRows, 'pressure experiments', 'wave-like neutron'], lines.join(' | '))
+})
+
+test('pdf: private-use glyphs are decoded by font (Symbol -> Greek, otherwise ASCII)', () => {
+  assert.equal(decodeSymbolic('\uF061\uF020\uF0A3\uF020\uF062', 'Symbol'), 'α ≤ β')
+  assert.equal(decodeSymbolic('HERMES\uF031\uF033', 'g_d0_f7'), 'HERMES13')
+  assert.equal(decodeSymbolic('jrr\uF033.jaea', 'ABCDEF+Calibri'), 'jrr3.jaea')
+  assert.equal(decodeSymbolic('a\uF8FFb', 'Whatever'), 'ab') // undecodable: dropped
+  assert.equal(decodeSymbolic('plain', 'Symbol'), 'plain')
+  const content = {
+    items: [{ str: 'x \uF0B3 \uF061', transform: [10, 0, 0, 10, 72, 700], width: 40, height: 10, fontName: 'f1' }],
+    styles: { f1: { fontFamily: 'Symbol' } },
+  }
+  assert.equal(pageToText(content), 'x ≥ α')
 })
