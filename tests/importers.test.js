@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { normalizeText } from '../src/lib/normalize.js'
-import { pageToText, extractPage, orderColumns, pickTitle, startsNewBlock, stripMarkdown, isPdf } from '../src/lib/importers.js'
+import { pageToText, extractPage, orderColumns, findGutters, pickTitle, startsNewBlock, stripMarkdown, isPdf } from '../src/lib/importers.js'
 
 /**
  * Build a fake pdf.js text item. pdf.js reports a transform matrix
@@ -178,4 +178,32 @@ test('pdf: superscripts and subscripts stay on their line and attach to the word
   const { text, items } = extractPage(content)
   assert.equal(text, 'E = mc² and σ_x here.\nNext line.')
   assert.deepEqual(items.map((it) => text.slice(it.start, it.end)), ['E = mc', '²', 'and', 'σ', '_x', 'here.', 'Next line.'])
+})
+
+test('pdf: a narrow gutter between columns sharing baselines is still a gutter', () => {
+  // Two justified columns, same baselines, gutter only 12pt wide at 10pt type --
+  // below the per-line gap threshold, so only the page-wide profile can see it.
+  const items = []
+  for (let row = 0; row < 8; row++) {
+    const y = 700 - row * 12
+    items.push(item(`left ${row} text here`, 72, y, { width: 200, height: 10 }))
+    items.push(item(`right ${row} text here`, 284, y, { width: 200, height: 10 }))
+  }
+  const text = pageToText({ items }).replace(/\n+/g, ' | ')
+  const order = text.split(' | ').map((l) => l.slice(0, 5))
+  assert.deepEqual(order.slice(0, 8), Array(8).fill('left '), text)
+  assert.deepEqual(order.slice(8), Array(8).fill('right'), text)
+})
+
+test('pdf: findGutters ignores margins and needs text on both sides', () => {
+  const single = []
+  for (let row = 0; row < 8; row++) single.push({ y: 700 - row * 12, height: 10, parts: [{ x: 72, width: 400 }] })
+  assert.deepEqual(findGutters(single), [])
+  const twoCol = []
+  for (let row = 0; row < 8; row++) {
+    twoCol.push({ y: 700 - row * 12, height: 10, parts: [{ x: 72, width: 200 }, { x: 284, width: 200 }] })
+  }
+  const g = findGutters(twoCol)
+  assert.equal(g.length, 1)
+  assert.ok(g[0].x0 >= 270 && g[0].x1 <= 286, JSON.stringify(g))
 })

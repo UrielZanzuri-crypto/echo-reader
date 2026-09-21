@@ -221,7 +221,7 @@ export function extractPage(content) {
 
   // Each rendered line: its text and the items that make it up, with local offsets.
   const rendered = []
-  for (const line of orderColumns(lines)) {
+  for (const line of orderColumns(lines, findGutters(lines))) {
     let text = ''
     const items = []
     let cursorX = null
@@ -313,7 +313,7 @@ export function pickTitle(metaTitle, filename) {
  * @param {{y:number, height:number, parts:{x:number,width:number}[]}[]} lines sorted top to bottom
  * @returns {{y:number, height:number, parts:object[]}[]}
  */
-export function orderColumns(lines) {
+export function orderColumns(lines, gutters = []) {
   if (lines.length < 2) return lines
   const out = []
 
@@ -332,7 +332,7 @@ export function orderColumns(lines) {
   }
 
   for (const line of lines) {
-    const segments = splitAtGutters(line)
+    const segments = splitAtGutters(line, gutters)
 
     for (const seg of segments) {
       const e = extent(seg)
@@ -374,14 +374,21 @@ export function orderColumns(lines) {
   return out
 }
 
-/** Break a line into pieces wherever the horizontal gap is far wider than a word space. */
-function splitAtGutters(line) {
+/**
+ * Break a line into pieces wherever the horizontal gap is far wider than a word
+ * space, or where consecutive runs sit on opposite sides of a page gutter found by
+ * findGutters() -- the latter catches columns whose gutter is no wider than a
+ * generous word space, which is common in two-column journals.
+ */
+function splitAtGutters(line, gutters = []) {
   const gutter = Math.max(14, line.height * 1.8)
   const pieces = []
   let current = null
   let cursorX = null
+  const straddles = (endX, startX) =>
+    gutters.some((g) => endX <= g.x1 + 1 && startX >= g.x0 - 1 && startX > endX - 1)
   for (const part of line.parts) {
-    if (current && cursorX !== null && part.x - cursorX > gutter) current = null
+    if (current && cursorX !== null && (part.x - cursorX > gutter || straddles(cursorX, part.x))) current = null
     if (!current) {
       current = { y: line.y, height: line.height, parts: [] }
       pieces.push(current)
@@ -390,6 +397,65 @@ function splitAtGutters(line) {
     cursorX = Math.max(cursorX ?? -Infinity, part.x + part.width)
   }
   return pieces
+}
+
+/**
+ * Vertical bands of the page that text almost never crosses: the gutters between
+ * columns. Built from an x-coverage profile of every line. A band counts only if
+ * it sits in the middle half of the text width and has real text on both sides,
+ * so margins, indents and ragged right edges are not mistaken for one.
+ * @returns {{x0:number, x1:number}[]}
+ */
+export function findGutters(lines) {
+  if (lines.length < 6) return []
+  let pageX0 = Infinity
+  let pageX1 = -Infinity
+  for (const l of lines) {
+    for (const p of l.parts) {
+      pageX0 = Math.min(pageX0, p.x)
+      pageX1 = Math.max(pageX1, p.x + p.width)
+    }
+  }
+  const width = pageX1 - pageX0
+  if (!(width > 150)) return []
+
+  const BIN = 2
+  const bins = Math.ceil(width / BIN) + 1
+  const coverage = new Uint16Array(bins)
+  for (const l of lines) {
+    const seen = new Uint8Array(bins)
+    for (const p of l.parts) {
+      const a = Math.max(0, Math.floor((p.x - pageX0) / BIN))
+      const b = Math.min(bins - 1, Math.ceil((p.x + p.width - pageX0) / BIN))
+      for (let i = a; i <= b; i++) seen[i] = 1
+    }
+    for (let i = 0; i < bins; i++) coverage[i] += seen[i]
+  }
+
+  const quiet = Math.max(1, Math.floor(lines.length * 0.08))
+  const gutters = []
+  let runStart = -1
+  for (let i = 0; i <= bins; i++) {
+    const isQuiet = i < bins && coverage[i] <= quiet
+    if (isQuiet && runStart < 0) runStart = i
+    if (!isQuiet && runStart >= 0) {
+      const x0 = pageX0 + runStart * BIN
+      const x1 = pageX0 + i * BIN
+      runStart = -1
+      const centre = (x0 + x1) / 2
+      if (x1 - x0 < 6) continue
+      if (centre < pageX0 + width * 0.25 || centre > pageX1 - width * 0.25) continue
+      // Real columns: a good share of lines has text on each side of the band.
+      let left = 0
+      let right = 0
+      for (const l of lines) {
+        if (l.parts.some((p) => p.x + p.width <= x0 + 1)) left++
+        if (l.parts.some((p) => p.x >= x1 - 1)) right++
+      }
+      if (left >= lines.length * 0.3 && right >= lines.length * 0.3) gutters.push({ x0, x1 })
+    }
+  }
+  return gutters
 }
 
 function extent(segment) {
