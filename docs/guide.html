@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>Echo Reader – מדריך התקנה והפעלה</title>
+<!-- Source of docs/Echo-Reader-Guide.pdf. Rebuild with: npm run guide -->
+<style>
+  @page { size: A4; margin: 14mm 16mm 13mm; }
+  :root { --ink: #1d1d1f; --soft: #5b5b62; --accent: #c2410c; --line: #e4e1dc; --tint: #faf7f2; }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--ink); background: #fff;
+         font: 10.2pt/1.45 "Arial Hebrew", Arial, sans-serif; }
+  h1 { font-size: 22pt; margin: 0 0 2pt; letter-spacing: -0.3pt; }
+  .sub { color: var(--soft); margin: 0 0 9pt; font-size: 11.5pt; }
+  h2 { font-size: 12.5pt; margin: 11pt 0 5pt; padding-bottom: 3pt; border-bottom: 1.5pt solid var(--accent);
+       display: flex; gap: 8pt; align-items: baseline; break-after: avoid; }
+  h2 .n { color: var(--accent); font-weight: 800; }
+  p { margin: 0 0 6pt; }
+  ol, ul { margin: 0 0 6pt; padding-inline-start: 18pt; }
+  li { margin: 0 0 4pt; }
+  b, strong, th, h1, h2 { font-weight: 700; }
+  .en { direction: ltr; unicode-bidi: isolate; font-family: Arial, sans-serif; }
+  code, .key { direction: ltr; unicode-bidi: isolate; font: 9.4pt/1.3 "SF Mono", Menlo, monospace; }
+  .key { display: inline-block; min-width: 16pt; text-align: center; padding: 0 4pt;
+         border: 0.8pt solid #c9c5be; border-bottom-width: 1.6pt; border-radius: 3pt; background: #fff; }
+  .box { background: var(--tint); border: 0.8pt solid var(--line); border-radius: 6pt; padding: 8pt 11pt; margin: 6pt 0 8pt; break-inside: avoid; }
+  .box.link { text-align: center; padding: 7pt; margin: 5pt 0 4pt; }
+  .box.link a { direction: ltr; unicode-bidi: isolate; font: 700 12pt/1.3 Menlo, monospace; color: var(--accent); text-decoration: none; }
+  .box.warn { border-inline-start: 3pt solid var(--accent); }
+  .box p:last-child, .box ul:last-child { margin-bottom: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 4pt 0 8pt; break-inside: avoid; }
+  td, th { text-align: start; padding: 3pt 6pt; border-bottom: 0.6pt solid var(--line); vertical-align: top; }
+  th { font-size: 9.5pt; color: var(--soft); font-weight: 600; }
+  td:first-child { white-space: nowrap; width: 1%; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10pt; }
+  .cols .box { margin: 0; }
+  .path { color: var(--soft); }
+  .term { display: block; direction: ltr; text-align: left; background: #1f1f23; color: #f5f5f5;
+          padding: 6pt 9pt; border-radius: 5pt; margin: 4pt 0 6pt; font: 9.4pt/1.4 "SF Mono", Menlo, monospace; }
+  .foot { margin-top: 14pt; color: var(--soft); font-size: 9pt; border-top: 0.6pt solid var(--line); padding-top: 6pt; }
+  .pb { break-before: page; }
+</style>
+</head>
+<body>
+
+<h1><span class="en">Echo Reader</span></h1>
+<p class="sub">המחשב מקריא לכם טקסט או PDF, והמילה שנאמרת מסומנת על המסך. הכול רץ על המחשב שלכם, בלי אינטרנט ובלי חשבון.</p>
+
+<div class="box">
+  <p><b>מה צריך:</b> מחשב Mac עם גרסה עדכנית של macOS, ודפדפן Chrome או Safari. לא צריך להתקין שום דבר אחר.</p>
+</div>
+
+<h2><span class="n">1</span> הורדה</h2>
+<ol>
+  <li>היכנסו לכתובת הזו (אפשר ללחוץ עליה):
+    <div class="box link"><a href="https://github.com/UrielZanzuri-crypto/echo-reader/releases/latest">github.com/UrielZanzuri-crypto/echo-reader/releases/latest</a></div></li>
+  <li>גללו מעט למטה עד הכותרת <b class="en">Assets</b>, ולחצו על קובץ ה-zip שמתאים למחשב שלכם כדי להוריד אותו:
+    <div class="cols" style="margin-top:5pt">
+      <div class="box"><p><b>מחשב עם שבב Apple</b> (M1, M2, M3, M4…)<br>הקובץ שבשמו מופיע <code>Apple-Silicon</code></p></div>
+      <div class="box"><p><b>מחשב עם מעבד Intel</b> (בדרך כלל לפני 2021)<br>הקובץ שבשמו מופיע <code>Intel</code></p></div>
+    </div>
+    <p class="path" style="margin-top:6pt">לא בטוחים איזה מחשב יש לכם? תפריט  ‹ <span class="en">About This Mac</span> (אודות Mac זה). אם בשורה „שבב” כתוב Apple, זה הראשון.</p>
+  </li>
+  <li>הקובץ שוקל כמה מאות מגה-בייט, כי הקולות הטבעיים כלולים בו. ההורדה יכולה לקחת כמה דקות.</li>
+</ol>
+
+<h2><span class="n">2</span> התקנה</h2>
+<ol>
+  <li>לחצו פעמיים על קובץ ה-zip שהורד. תיווצר תיקייה בשם <b class="en">Echo Reader</b>.</li>
+  <li>גררו את <b>כל התיקייה</b> לתיקיית „מסמכים” (Documents). <b>אל תוציאו את האפליקציה מהתיקייה</b>, כי היא צריכה את הקבצים שלידה.</li>
+  <li>פתחו את התיקייה ולחצו פעמיים על <b class="en">Echo Reader.app</b>.</li>
+</ol>
+
+<div class="box warn">
+  <p><b>בפעם הראשונה macOS יחסום את האפליקציה. זה צפוי.</b> האפליקציה לא חתומה אצל Apple (חתימה עולה כסף), ולכן תופיע הודעה שלא ניתן לאמת אותה. כדי לאשר:</p>
+  <ul>
+    <li><b>macOS 15 ומעלה:</b> לחצו „סיום” (Done). פתחו <span class="path">הגדרות המערכת ‹ פרטיות ואבטחה</span>, גללו למטה ולחצו <b>„פתח בכל זאת”</b> (Open Anyway). אז לחצו שוב פעמיים על האפליקציה ואשרו.</li>
+    <li><b>גרסאות ישנות יותר:</b> לחיצה ימנית על האפליקציה ‹ „פתח” ‹ „פתח”.</li>
+  </ul>
+  <p>אם נשאלים אם לאפשר גישה לתיקייה, אשרו. מכאן והלאה מספיקה לחיצה כפולה רגילה.</p>
+</div>
+
+<h2><span class="n">3</span> פתיחת קובץ והקראה</h2>
+<ol>
+  <li>הקורא נפתח בדפדפן. זה דף שרץ על המחשב שלכם, לא אתר באינטרנט.</li>
+  <li><b>פתיחת קובץ:</b> גררו קובץ PDF (או קובץ טקסט) מהמחשב לתוך החלון. או: לחצו על כפתור פתיחת הקובץ בסרגל העליון (או מקש <span class="key">O</span>), ובחרו את הקובץ. אפשר גם פשוט להדביק טקסט.</li>
+  <li><b>הקראה:</b> לחצו על ▶ או על מקש הרווח. לחיצה על מילה כלשהי מתחילה את ההקראה ממנה. המילה הנוכחית מסומנת תוך כדי.</li>
+  <li><b>מהירות וקול:</b> בסרגל העליון בוחרים קול ומהירות. אם הקול לא מוצא חן בעיניכם, נסו אחר (סעיף 4).</li>
+</ol>
+
+<table>
+  <tr><th>מקש</th><th>פעולה</th></tr>
+  <tr><td><span class="key">Space</span></td><td>הפעלה / השהיה</td></tr>
+  <tr><td><span class="key">←</span> <span class="key">→</span></td><td>משפט קודם / הבא</td></tr>
+  <tr><td><span class="key">↑</span> <span class="key">↓</span></td><td>להאט / להאיץ (מ-0.5× עד 3×)</td></tr>
+  <tr><td><span class="key">O</span> <span class="key">S</span></td><td>פתיחת קובץ / הגדרות</td></tr>
+  <tr><td><span class="key">Esc</span></td><td>עצירה, או סגירת חלון פתוח</td></tr>
+</table>
+
+<h2><span class="n">4</span> קולות</h2>
+<ul>
+  <li><b>קולות טבעיים</b> (<span class="en">Heart, Bella, Emma, Michael…</span>) מופיעים בראש תפריט הקול. הם נשמעים הכי טוב. בפעם הראשונה בכל הפעלה לוקח לקול כמה שניות להיטען. הקולות האלה מקריאים <b>באנגלית בלבד</b>.</li>
+  <li><b>הקולות של ה-Mac</b> מופיעים מתחתיהם. כדי לקבל גרסאות איכותיות יותר: <span class="path">הגדרות המערכת ‹ נגישות ‹ תוכן מדובר ‹ קול המערכת ‹ ניהול קולות</span>. הורידו גרסאות <span class="en">Enhanced</span> או <span class="en">Premium</span> וסגרו ופתחו מחדש את הדפדפן.</li>
+  <li>בהגדרות (<span class="key">S</span>) אפשר לבחור מהירות, גודל אות, ערכת צבעים, וגם כלים שעוזרים להתרכז: רעש רקע, עמעום כל מה שמסביב למשפט הנוכחי, ובדיקה תקופתית שאתם עדיין שם.</li>
+</ul>
+
+<h2><span class="n">5</span> סגירה</h2>
+<p>אפשר פשוט לסגור את הלשונית בדפדפן. השרת הקטן שמפעיל את הקורא נסגר לבד אחרי שש שעות בלי שימוש. לחיצה כפולה נוספת על האפליקציה פותחת לשונית חדשה.</p>
+
+<h2><span class="n">6</span> אם משהו לא עובד</h2>
+<table>
+  <tr><th>מה קורה</th><th>מה לעשות</th></tr>
+  <tr><td>לחיצה כפולה ולא קורה כלום, או הודעה שהאפליקציה „פגומה”</td>
+      <td>macOS לפעמים מריץ אפליקציות שהורדו מתיקייה זמנית ומבודדת, ושם היא לא מוצאת את הקבצים שלה. פתחו את <span class="en">Terminal</span> (חפשו אותו ב-Spotlight), הקלידו את השורה הבאה <b>עם רווח בסוף</b>, גררו לחלון את התיקייה <span class="en">Echo Reader</span> ולחצו <span class="key">Enter</span>:
+      <span class="term">xattr -dr com.apple.quarantine </span>
+      ואז נסו שוב לפתוח את האפליקציה.</td></tr>
+  <tr><td>אין קול בכלל</td>
+      <td>בדקו את עוצמת הקול במחשב. נסו קול אחר מהתפריט, או לחצו על כפתור הרמקול שליד התפריט כדי לשמוע דוגמה.</td></tr>
+  <tr><td>הקול נשמע כמו רובוט</td>
+      <td>בחרו אחד מהקולות הטבעיים שבראש התפריט, או הורידו קול <span class="en">Premium</span> של ה-Mac (סעיף 4).</td></tr>
+  <tr><td>PDF נפתח בלי טקסט</td>
+      <td>זה כנראה PDF סרוק, כלומר תמונה של דף בלי שכבת טקסט. צריך קודם להעביר אותו OCR (זיהוי טקסט).</td></tr>
+</table>
+
+<div class="box">
+  <p><b>פרטיות:</b> הטקסט והקבצים שלכם לא יוצאים מהמחשב. הקורא לא מתחבר לאינטרנט. בהגדרות יש מתג „<span class="en">Offline voices only</span>”, והוא מסתיר את קולות הענן של Chrome, שכן שולחים טקסט לשרת.</p>
+</div>
+
+<p class="foot"><span class="en">Echo Reader</span> הוא פרויקט קוד פתוח. הקולות הטבעיים מבוססים על המודל <span class="en">Kokoro-82M</span> (רישיון <span class="en">Apache 2.0</span>), ותצוגת ה-PDF על <span class="en">pdf.js</span> של Mozilla. פירוט הרישיונות נמצא בקובץ <span class="en">THIRD_PARTY_NOTICES.md</span>.</p>
+
+</body>
+</html>

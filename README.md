@@ -313,3 +313,13 @@ echoReader.engine.play(0)          // start from the top
 echoReader.engine.span             // the range being spoken right now
 echoReader.document.model.sentences // all sentence ranges
 ```
+
+## License
+
+Echo Reader's code is MIT (`LICENSE`). The built app bundles third-party
+components under their own licenses — notably eSpeak NG (GPL-3.0-or-later)
+inside the neural-voice phonemiser, and the Kokoro-82M weights (Apache-2.0)
+when packaged with `--with-voices`. See `THIRD_PARTY_NOTICES.md`; the zip from
+`npm run package` carries the notices, the license texts and the Hebrew
+install guide (`docs/Echo-Reader-Guide.pdf`, rebuilt from `docs/guide.html`
+with `npm run guide`).

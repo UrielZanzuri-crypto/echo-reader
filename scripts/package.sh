@@ -45,7 +45,9 @@ cp -R dist "$STAGE/dist"
 # reader does not need. Add --with-voices when you actually want them.
 cp scripts/launcher.sh scripts/serve.mjs scripts/stop.mjs "$STAGE/scripts/"
 cp package.json "$STAGE/"
-cp LICENSE "$STAGE/" 2>/dev/null || true
+cp LICENSE THIRD_PARTY_NOTICES.md "$STAGE/"
+cp -R licenses "$STAGE/licenses"
+[ -f docs/Echo-Reader-Guide.pdf ] && cp docs/Echo-Reader-Guide.pdf "$STAGE/מדריך - Echo Reader.pdf"
 
 if [ "$WITH_NODE" = 1 ]; then
   TARBALL="node-$NODE_VERSION-darwin-$ARCH.tar.gz"
