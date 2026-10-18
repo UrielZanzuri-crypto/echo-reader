@@ -195,6 +195,25 @@ test('pdf: a narrow gutter between columns sharing baselines is still a gutter',
   assert.deepEqual(order.slice(8), Array(8).fill('right'), text)
 })
 
+test('pdf: a figure and caption across the gutter do not hide it', () => {
+  // Physics-Uspekhi style page: running header and a three-line figure caption
+  // span both columns, and the figure's turned axis label sits right on the
+  // gutter. Too many crossings for a fixed share of lines, yet next to nothing
+  // beside the columns themselves.
+  const items = [item('Neutron diffraction on pulsed sources', 240, 783, { width: 125, height: 8 })]
+  items.push({ str: 'Intensity, arb. units', transform: [0, 8, -8, 0, 299, 645], width: 65, height: 8 })
+  items.push(item('500', 90, 710, { width: 12, height: 8 }), item('1000', 306, 716, { width: 16, height: 8 }))
+  for (let row = 0; row < 3; row++) items.push(item(`caption ${row}`, 52, 570 - row * 10, { width: 496, height: 8 }))
+  for (let row = 0; row < 24; row++) {
+    const y = 513 - row * 11
+    items.push(item(`left ${row} text here`, 52, y, { width: 241, height: 9.4 }))
+    items.push(item(`right ${row} text here`, 307.5, y, { width: 241, height: 9.4 }))
+  }
+  const lines = pageToText({ items }).split(/\n+/)
+  const body = lines.filter((l) => /^(left|right) /.test(l)).map((l) => l.slice(0, 5))
+  assert.deepEqual(body, [...Array(24).fill('left '), ...Array(24).fill('right')], lines.join(' | '))
+})
+
 test('pdf: findGutters ignores margins and needs text on both sides', () => {
   const single = []
   for (let row = 0; row < 8; row++) single.push({ y: 700 - row * 12, height: 10, parts: [{ x: 72, width: 400 }] })

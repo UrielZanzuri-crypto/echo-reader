@@ -201,10 +201,12 @@ export function extractPage(content) {
   /** @type {{y:number, height:number, parts:object[]}[]} */
   const lines = []
   for (const item of raw) {
-    const [, , , scaleY, x, y] = item.transform
+    const [, skewA, skewB, scaleY, x, y] = item.transform
     const height = Math.abs(item.height || scaleY) || 10
     const family = styles[item.fontName]?.fontFamily || ''
     const part = { x, y, width: item.width || 0, height, str: decodeSymbolic(item.str, family), script: '' }
+    // Turned text (a figure's vertical axis label): its width runs up the page, not across it.
+    if (Math.abs(skewA) > 0.01 || Math.abs(skewB) > 0.01) part.rotated = true
     noteFont(fontReport, family, item.str)
 
     // Same line if the baselines are within a third of the line's glyph height.
@@ -514,14 +516,20 @@ export function decodeSymbolic(str, fontFamily = '') {
  * columns. Built from an x-coverage profile of every line. A band counts only if
  * it sits in the middle half of the text width and has real text on both sides,
  * so margins, indents and ragged right edges are not mistaken for one.
+ *
+ * "Almost never" is measured against the columns themselves: a figure with its
+ * caption, tick labels and the running header can put a handful of lines across
+ * the gutter, which is still next to nothing beside the dozens of lines that fill
+ * each column. Turned text (axis labels) is left out entirely.
  * @returns {{x0:number, x1:number}[]}
  */
 export function findGutters(lines) {
-  if (lines.length < 6) return []
+  const solid = lines.map((l) => l.parts.filter((p) => !p.rotated)).filter((parts) => parts.length)
+  if (solid.length < 6) return []
   let pageX0 = Infinity
   let pageX1 = -Infinity
-  for (const l of lines) {
-    for (const p of l.parts) {
+  for (const parts of solid) {
+    for (const p of parts) {
       pageX0 = Math.min(pageX0, p.x)
       pageX1 = Math.max(pageX1, p.x + p.width)
     }
@@ -532,9 +540,9 @@ export function findGutters(lines) {
   const BIN = 2
   const bins = Math.ceil(width / BIN) + 1
   const coverage = new Uint16Array(bins)
-  for (const l of lines) {
+  for (const parts of solid) {
     const seen = new Uint8Array(bins)
-    for (const p of l.parts) {
+    for (const p of parts) {
       const a = Math.max(0, Math.floor((p.x - pageX0) / BIN))
       const b = Math.min(bins - 1, Math.ceil((p.x + p.width - pageX0) / BIN))
       for (let i = a; i <= b; i++) seen[i] = 1
@@ -542,7 +550,9 @@ export function findGutters(lines) {
     for (let i = 0; i < bins; i++) coverage[i] += seen[i]
   }
 
-  const quiet = Math.max(1, Math.floor(lines.length * 0.08))
+  // Quiet: at most 8% of all lines, or a fifth of how busy the text typically is.
+  const busy = percentile([...coverage], 0.5)
+  const quiet = Math.max(1, Math.floor(solid.length * 0.08), Math.floor(busy * 0.2))
   const gutters = []
   let runStart = -1
   for (let i = 0; i <= bins; i++) {
@@ -558,11 +568,11 @@ export function findGutters(lines) {
       // Real columns: a good share of lines has text on each side of the band.
       let left = 0
       let right = 0
-      for (const l of lines) {
-        if (l.parts.some((p) => p.x + p.width <= x0 + 1)) left++
-        if (l.parts.some((p) => p.x >= x1 - 1)) right++
+      for (const parts of solid) {
+        if (parts.some((p) => p.x + p.width <= x0 + 1)) left++
+        if (parts.some((p) => p.x >= x1 - 1)) right++
       }
-      if (left >= lines.length * 0.3 && right >= lines.length * 0.3) gutters.push({ x0, x1 })
+      if (left >= solid.length * 0.3 && right >= solid.length * 0.3) gutters.push({ x0, x1 })
     }
   }
   return gutters

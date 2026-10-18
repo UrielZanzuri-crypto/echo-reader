@@ -11,11 +11,11 @@ import { normalizeText } from './lib/normalize.js'
 import { buildDocument } from './lib/segmenter.js'
 import { TtsEngine, isSpeechSupported } from './lib/engine.js'
 import { Reader } from './lib/reader.js'
-import { PageView } from './lib/pageview.js'
+import { PageView, MIN_ZOOM, MAX_ZOOM } from './lib/pageview.js'
 import { importFile, isPdf } from './lib/importers.js'
 import { loadSettings, saveSettings, loadDocument, saveDocument, DEFAULT_SETTINGS } from './lib/store.js'
 import { SAMPLE_TEXT, SAMPLE_TITLE } from './lib/sample.js'
-import { classifyVoice, filterVoices, sortVoices, PREVIEW_SENTENCE } from './lib/voices.js'
+import { classifyVoice, filterVoices, sortVoices, previewSentence } from './lib/voices.js'
 import { NoisePlayer, NOISE_COLOURS } from './lib/noise.js'
 import { Checkpoints } from './lib/checkpoints.js'
 import { NeuralEngine, KOKORO_VOICES, NEURAL_PREFIX, isNeuralVoice } from './lib/neural.js'
@@ -28,6 +28,10 @@ const el = {
   content: $('content'),
   pages: $('pages'),
   btnView: $('btnView'),
+  zoomGroup: $('zoomGroup'),
+  btnZoomOut: $('btnZoomOut'),
+  btnZoomReset: $('btnZoomReset'),
+  btnZoomIn: $('btnZoomIn'),
   empty: $('empty'),
   docTitle: $('docTitle'),
 
@@ -133,6 +137,7 @@ function boot() {
   bindControls()
   bindSettings()
   bindKeyboard()
+  bindZoom()
   bindDragAndDrop()
   bindEngine()
 
@@ -224,6 +229,7 @@ function setView(name) {
   el.content.hidden = !current || usePages
   el.pages.hidden = !current || !usePages
   el.btnView.hidden = !hasPages
+  el.zoomGroup.hidden = !usePages
   el.btnView.setAttribute('aria-pressed', String(usePages))
   el.btnView.title = usePages ? 'Show as plain text (V)' : 'Show the PDF pages (V)'
   el.btnView.querySelector('span').textContent = usePages ? 'Plain text' : 'Pages'
@@ -243,6 +249,7 @@ function updateEmptyState() {
   el.empty.hidden = hasDoc
   el.content.hidden = !hasDoc || view === pageView
   el.pages.hidden = !hasDoc || view !== pageView
+  el.zoomGroup.hidden = !hasDoc || view !== pageView
   if (!hasDoc) {
     el.docTitle.textContent = 'No document'
     document.title = 'Echo Reader'
@@ -515,6 +522,7 @@ function bindSettings() {
     syncSettingsUi()
     applyTheme()
     applyTypography()
+    setPageZoom(settings.pageZoom)
     view.setMode(settings.highlightMode)
     view.autoScroll = settings.autoScroll
     engine.update({ rate: settings.rate, pitch: settings.pitch, volume: settings.volume })
@@ -761,8 +769,9 @@ function previewVoice() {
   if (isNeuralVoice(settings.voiceURI)) {
     if (engine.state === 'playing') engine.pause()
     setStatus(neuralEngine.modelState === 'ready' ? 'Generating preview…' : 'Loading the neural voice…')
+    const name = neuralEngine.getVoices().find((v) => v.voiceURI === settings.voiceURI)?.name
     neuralEngine
-      .preview(PREVIEW_SENTENCE)
+      .preview(previewSentence(name))
       .then(() => setStatus(engine.state === 'paused' ? 'Paused' : 'Ready'))
       .catch((err) => reportDeadVoice(el.voiceSelect.selectedOptions[0]?.textContent || 'Neural voice', err.message))
     return
@@ -780,7 +789,7 @@ function previewVoice() {
     /* ignore */
   }
 
-  const utterance = new SpeechSynthesisUtterance(PREVIEW_SENTENCE)
+  const utterance = new SpeechSynthesisUtterance(previewSentence(voice.name))
   utterance.voice = voice
   utterance.lang = voice.lang || ''
   utterance.rate = settings.rate
@@ -1118,6 +1127,18 @@ function bindKeyboard() {
 
     const overlayOpen = !el.editorOverlay.hidden || !el.settingsOverlay.hidden
 
+    // Cmd/Ctrl +, -, 0 zoom the document instead of the whole window, which would
+    // push the play bar off the bottom of the screen.
+    if (event.metaKey || event.ctrlKey) {
+      if (overlayOpen) return
+      const zoom = { '=': 1, '+': 1, '-': -1, _: -1, 0: 0 }[event.key]
+      if (zoom !== undefined && current) {
+        event.preventDefault()
+        stepZoom(zoom)
+      }
+      return // the single-key shortcuts below are not for Cmd+V, Cmd+S and friends
+    }
+
     switch (event.key) {
       case ' ':
         event.preventDefault()
@@ -1185,6 +1206,100 @@ function nudgeRate(delta) {
   engine.update({ rate: settings.rate })
   saveSettings(settings)
   toast(`Speed ${settings.rate.toFixed(2)}×`, 'info', 900)
+}
+
+/* ─────────────────────────────────── zoom ─────────────────────────────────── */
+
+/** Where Cmd+ and Cmd- stop, like a browser's own zoom levels. */
+const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4]
+const TEXT_SIZE = { min: 14, max: 34 }
+
+/**
+ * Zoom whatever is on screen: the PDF pages are scaled, the plain text changes
+ * size. Only the document grows; the top bar and play bar stay put.
+ */
+function bindZoom() {
+  setPageZoom(settings.pageZoom)
+  el.btnZoomIn.addEventListener('click', () => stepZoom(1))
+  el.btnZoomOut.addEventListener('click', () => stepZoom(-1))
+  el.btnZoomReset.addEventListener('click', () => stepZoom(0))
+
+  // Trackpad pinch. Chrome and Firefox report it as a wheel event with ctrlKey,
+  // Safari as gesture events; either way the browser must not zoom the page.
+  let pinching = false
+  let pinchStart = 1
+  let wheelSize = 0
+  let wheelAt = 0
+  el.scroller.addEventListener(
+    'wheel',
+    (event) => {
+      if (!event.ctrlKey || !current || pinching) return
+      event.preventDefault()
+      const factor = Math.exp(-event.deltaY * 0.01)
+      if (view === pageView) {
+        setPageZoom(pageView.zoom * factor, { x: event.clientX, y: event.clientY })
+      } else {
+        if (event.timeStamp - wheelAt > 300) wheelSize = settings.fontSize
+        wheelAt = event.timeStamp
+        wheelSize = Math.min(TEXT_SIZE.max, Math.max(TEXT_SIZE.min, wheelSize * factor))
+        setTextSize(wheelSize)
+      }
+    },
+    { passive: false }
+  )
+  document.addEventListener('gesturestart', (event) => {
+    event.preventDefault()
+    if (!current) return
+    pinching = true
+    pinchStart = view === pageView ? pageView.zoom : settings.fontSize
+  })
+  document.addEventListener('gesturechange', (event) => {
+    event.preventDefault()
+    if (!pinching) return
+    if (view === pageView) setPageZoom(pinchStart * event.scale, { x: event.clientX, y: event.clientY })
+    else setTextSize(pinchStart * event.scale)
+  })
+  document.addEventListener('gestureend', (event) => {
+    event.preventDefault()
+    pinching = false
+  })
+}
+
+/** One step in or out (+1 / -1), or back to fit (0). */
+function stepZoom(direction) {
+  if (!current) return
+  if (view === pageView) {
+    const z = pageView.zoom
+    const next =
+      direction === 0
+        ? 1
+        : direction > 0
+          ? (ZOOM_STEPS.find((s) => s > z + 0.01) ?? MAX_ZOOM)
+          : (ZOOM_STEPS.findLast((s) => s < z - 0.01) ?? MIN_ZOOM)
+    setPageZoom(next)
+  } else {
+    const size = direction === 0 ? DEFAULT_SETTINGS.fontSize : settings.fontSize + direction * 2
+    setTextSize(size)
+    toast(`Text size ${settings.fontSize}px`, 'info', 900)
+  }
+}
+
+function setPageZoom(zoom, anchor) {
+  settings.pageZoom = pageView.setZoom(zoom, anchor)
+  el.btnZoomReset.textContent = `${Math.round(settings.pageZoom * 100)}%`
+  el.btnZoomOut.disabled = settings.pageZoom <= MIN_ZOOM
+  el.btnZoomIn.disabled = settings.pageZoom >= MAX_ZOOM
+  saveSettings(settings)
+}
+
+function setTextSize(px) {
+  const size = Math.round(Math.min(TEXT_SIZE.max, Math.max(TEXT_SIZE.min, px)))
+  if (size === settings.fontSize) return
+  settings.fontSize = size
+  el.fontSize.value = String(size)
+  el.fontSizeValue.textContent = `${size}px`
+  applyTypography()
+  saveSettings(settings)
 }
 
 /* ────────────────────────────── drag and drop ────────────────────────────── */

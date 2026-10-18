@@ -14,10 +14,18 @@
 
 import { findSegmentAt } from './segmenter.js'
 
-/** Widest a page is drawn, in CSS pixels; narrower windows scale down. */
+/** Widest a page is drawn at 100%, in CSS pixels; narrower windows scale down. */
 const MAX_PAGE_WIDTH = 920
 /** How far beyond the viewport pages are rendered ahead of time. */
 const RENDER_MARGIN = '1200px 0px'
+/** Zoom range, relative to the page fitting the window. */
+export const MIN_ZOOM = 0.5
+export const MAX_ZOOM = 4
+/**
+ * Largest canvas drawn for one page, in device pixels. Safari refuses canvases
+ * much past 16.7M pixels; beyond this a zoomed page is upscaled a little instead.
+ */
+const MAX_CANVAS_PIXELS = 16_000_000
 
 export class PageView {
   /**
@@ -30,17 +38,23 @@ export class PageView {
     this.mode = 'both'
     this.focusMode = 'off'
     this.autoScroll = true
+    this.zoom = 1
     this._veiledRange = null
 
     this.doc = null
     this.layout = null
     this.pdf = null
-    /** @type {{el: HTMLElement, canvas: HTMLCanvasElement, marks: HTMLElement, scale: number, items: object[], rendered: boolean, task: object|null}[]} */
+    /**
+     * `drawn` is the scale the canvas holds (0 = blank), `pending` the scale being
+     * rendered; a page is re-rendered whenever its scale moves away from both.
+     * @type {{el: HTMLElement, canvas: HTMLCanvasElement, marks: HTMLElement, scale: number, items: object[], drawn: number, pending: number, task: object|null}[]}
+     */
     this._pages = []
     this._observer = null
     this._lastSpan = null
     this._lastSentence = -1
     this._resizeTimer = 0
+    this._zoomTimer = 0
 
     this._onResize = () => {
       clearTimeout(this._resizeTimer)
@@ -66,6 +80,7 @@ export class PageView {
         for (const entry of entries) {
           const index = Number(entry.target.dataset.page)
           if (entry.isIntersecting) this._renderPage(index)
+          else this._releasePage(index)
         }
       },
       { root: this.scroller, rootMargin: RENDER_MARGIN }
@@ -86,7 +101,7 @@ export class PageView {
       el.append(canvas, veils, marks)
       fragment.appendChild(el)
 
-      this._pages.push({ el, canvas, marks, veils, scale: 1, items: [], rendered: false, task: null })
+      this._pages.push({ el, canvas, marks, veils, scale: 1, items: [], drawn: 0, pending: 0, task: null })
       this._observer.observe(el)
     })
     this.container.appendChild(fragment)
@@ -99,6 +114,7 @@ export class PageView {
 
   destroy() {
     window.removeEventListener('resize', this._onResize)
+    clearTimeout(this._zoomTimer)
     this._observer?.disconnect()
     this._observer = null
     for (const page of this._pages) page.task?.cancel?.()
@@ -124,9 +140,9 @@ export class PageView {
 
   /* ----------------------------------------------------------- sizing */
 
-  /** Scale every page to the available width; called on render and on resize. */
+  /** Scale every page to the available width times the zoom; on render, resize and zoom. */
   _sizePages() {
-    const available = Math.min(MAX_PAGE_WIDTH, this.scroller.clientWidth - 48)
+    const available = Math.min(MAX_PAGE_WIDTH, this.scroller.clientWidth - 48) * this.zoom
     this.layout.pages.forEach((page, index) => {
       const entry = this._pages[index]
       const scale = Math.max(0.2, available / page.width)
@@ -151,39 +167,121 @@ export class PageView {
     if (!this.layout) return
     this._sizePages()
     this._veiledRange = null
-    for (const [index, page] of this._pages.entries()) {
-      if (!page.rendered) continue
-      page.rendered = false
-      this._renderPage(index)
-    }
+    this._rerenderVisible()
     this.highlight(this._lastSpan, this._lastSentence, { scroll: false })
+  }
+
+  /**
+   * Zoom the pages, keeping the spot under `anchor` (viewport coordinates; the
+   * middle of the view by default) where it is. The pages resize at once, the
+   * stretched canvases standing in until the sharp ones are drawn a moment after
+   * the zooming stops.
+   * @returns {number} the zoom actually applied
+   */
+  setZoom(zoom, anchor = null) {
+    zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
+    if (Math.abs(zoom - this.zoom) < 0.001) return this.zoom
+    this.zoom = zoom
+    if (!this.layout) return zoom
+
+    const view = this.scroller.getBoundingClientRect()
+    const x = anchor?.x ?? view.left + view.width / 2
+    const y = anchor?.y ?? view.top + view.height / 2
+    // The page under the anchor (or the nearest one), and where on it the anchor falls.
+    let target = null
+    let best = Infinity
+    for (const entry of this._pages) {
+      const r = entry.el.getBoundingClientRect()
+      const distance = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0
+      if (distance < best) {
+        best = distance
+        target = { entry, fx: (x - r.left) / r.width, fy: (y - r.top) / r.height }
+      }
+      if (distance === 0) break
+    }
+
+    this._sizePages()
+    this._veiledRange = null
+    this.highlight(this._lastSpan, this._lastSentence, { scroll: false })
+
+    if (target) {
+      const r = target.entry.el.getBoundingClientRect()
+      this.scroller.scrollLeft += r.left + target.fx * r.width - x
+      this.scroller.scrollTop += r.top + target.fy * r.height - y
+    }
+    clearTimeout(this._zoomTimer)
+    this._zoomTimer = setTimeout(() => this._rerenderVisible(), 180)
+    return zoom
+  }
+
+  /**
+   * Draw pages near the viewport at their current scale -- including ones a zoom
+   * just pulled into view, which the observer may not report -- and drop the
+   * canvases of the rest, which the observer redraws as they come back into reach.
+   */
+  _rerenderVisible() {
+    const view = this.scroller.getBoundingClientRect()
+    const margin = parseInt(RENDER_MARGIN, 10)
+    for (const [index, entry] of this._pages.entries()) {
+      const r = entry.el.getBoundingClientRect()
+      const near = r.bottom > view.top - margin && r.top < view.bottom + margin
+      if (near) this._renderPage(index)
+      else this._releasePage(index)
+    }
   }
 
   async _renderPage(index) {
     const entry = this._pages[index]
-    if (!entry || entry.rendered || entry.task || !this.pdf) return
-    entry.rendered = true
+    if (!entry || !this.pdf) return
+    const scale = entry.scale
+    if (entry.drawn === scale || entry.pending === scale) return
+    entry.task?.cancel?.() // superseded by a newer size
+    entry.task = null
+    entry.pending = scale
 
     try {
       const page = await this.pdf.getPage(index + 1)
-      if (!this._pages[index]) return // view was torn down meanwhile
-      const dpr = window.devicePixelRatio || 1
-      const viewport = page.getViewport({ scale: entry.scale * dpr })
-      entry.canvas.width = Math.floor(viewport.width)
-      entry.canvas.height = Math.floor(viewport.height)
-      entry.canvas.style.width = '100%'
-      entry.canvas.style.height = '100%'
+      if (this._pages[index] !== entry || entry.pending !== scale) return // torn down or superseded
+      const base = page.getViewport({ scale })
+      const ratio = Math.min(window.devicePixelRatio || 1, Math.sqrt(MAX_CANVAS_PIXELS / (base.width * base.height)))
+      const viewport = page.getViewport({ scale: scale * ratio })
+      // Draw off-screen and swap, so the old picture stays up until the new one is ready.
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.floor(viewport.width)
+      canvas.height = Math.floor(viewport.height)
+      canvas.style.width = '100%'
+      canvas.style.height = '100%'
 
-      const context = entry.canvas.getContext('2d', { alpha: false })
-      entry.task = page.render({ canvasContext: context, viewport })
-      await entry.task.promise
+      const context = canvas.getContext('2d', { alpha: false })
+      const task = page.render({ canvasContext: context, viewport })
+      entry.task = task
+      await task.promise
+      if (entry.task !== task) return
+      entry.canvas.replaceWith(canvas)
+      entry.canvas = canvas
+      entry.drawn = scale
       entry.el.classList.add('is-rendered')
     } catch (err) {
       if (err?.name !== 'RenderingCancelledException') console.warn('[pageview] render failed', err)
-      entry.rendered = false
     } finally {
-      entry.task = null
+      if (entry.pending === scale) {
+        entry.pending = 0
+        entry.task = null
+      }
     }
+  }
+
+  /** Free a page's canvas once it is well out of view; big zooms add up fast. */
+  _releasePage(index) {
+    const entry = this._pages[index]
+    if (!entry || (!entry.drawn && !entry.pending)) return
+    entry.task?.cancel?.()
+    entry.task = null
+    entry.pending = 0
+    entry.drawn = 0
+    entry.canvas.width = 0
+    entry.canvas.height = 0
+    entry.el.classList.remove('is-rendered')
   }
 
   /* -------------------------------------------------------- highlight */

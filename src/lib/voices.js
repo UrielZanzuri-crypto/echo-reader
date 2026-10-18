@@ -79,6 +79,17 @@ export function sortVoices(voices, uiLang) {
   )
 }
 
-/** One sentence that shows off prosody, numbers and a question. */
-export const PREVIEW_SENTENCE =
-  'Reading along at 9.30 in the morning, does this voice sound right to you?'
+/**
+ * What a voice says when it is chosen: its own name, then a question for some
+ * prosody. "Heart (neural)" -> "Hi, I'm Heart. Does this voice sound right to you?"
+ */
+export function previewSentence(voiceName = '') {
+  const name = voiceName
+    .replace(/\s*[(\-–].*$/, '') // "Eddy (English (US))", "Aria Online - English (US)"
+    .replace(/^(Microsoft|Google|Apple)\s+/i, '')
+    .replace(/\s+Online$/i, '')
+    .trim()
+  // "Google US English" names a language, not a voice; do not introduce it as one.
+  const greeting = name && !/\b(English|US|UK|GB)\b/.test(name) ? `Hi, I'm ${name}.` : 'Hi there.'
+  return `${greeting} Does this voice sound right to you?`
+}

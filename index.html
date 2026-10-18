@@ -28,6 +28,15 @@
         </div>
 
         <div class="topbar-actions">
+          <div id="zoomGroup" class="zoom" role="group" aria-label="Page zoom" hidden>
+            <button id="btnZoomOut" class="btn btn-icon" type="button" title="Zoom out (⌘−)" aria-label="Zoom out">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg>
+            </button>
+            <button id="btnZoomReset" class="btn zoom-level" type="button" title="Fit to window (⌘0)">100%</button>
+            <button id="btnZoomIn" class="btn btn-icon" type="button" title="Zoom in (⌘+)" aria-label="Zoom in">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg>
+            </button>
+          </div>
           <button id="btnView" class="btn" type="button" title="Show as plain text (V)" aria-pressed="true" hidden>
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
             <span>Plain text</span>
@@ -305,6 +314,7 @@
               <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Speed down / up</dd>
               <dt><kbd>O</kbd> <kbd>E</kbd> <kbd>S</kbd></dt><dd>Open file, edit text, settings</dd>
               <dt><kbd>V</kbd></dt><dd>PDF: switch between pages and text</dd>
+              <dt><kbd>⌘</kbd> <kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd></dt><dd>Zoom the pages (or text size), fit to window; pinch works too</dd>
               <dt><kbd>N</kbd> <kbd>F</kbd></dt><dd>Cycle background noise, cycle dimming</dd>
               <dt><kbd>Enter</kbd></dt><dd>Answer a "still reading?" check</dd>
               <dt><kbd>Click</kbd></dt><dd>Start reading from that word</dd>

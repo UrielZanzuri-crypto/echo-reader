@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS = {
   fontFamily: 'serif', // 'serif' | 'sans' | 'mono'
   columnWidth: 68,
   pdfView: 'page', // 'page' | 'text' -- how PDFs open
+  pageZoom: 1, // PDF pages, relative to fitting the window
   showAllVoices: false, // include Eloquence and novelty voices in the menu
   neuralQuality: 'fp32', // 'fp32' (best, GPU) | 'q8' (88 MB, CPU) for the Kokoro voices
   readMath: true, // say α as "alpha", x² as "x squared" (display is unchanged)

@@ -163,6 +163,14 @@ body {
 
 .topbar-actions { display: flex; gap: 8px; align-items: center; }
 
+/* Page zoom: − 100% + joined into one control. */
+.zoom { display: flex; align-items: center; }
+.zoom[hidden] { display: none; }
+.zoom .btn { border-radius: 0; margin-left: -1px; }
+.zoom .btn:first-child { border-radius: var(--radius) 0 0 var(--radius); margin-left: 0; }
+.zoom .btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.zoom .zoom-level { min-width: 58px; justify-content: center; padding: 0 8px; font-variant-numeric: tabular-nums; }
+
 /* ──────────────────────────────── buttons ─────────────────────────────── */
 
 .btn {
@@ -206,7 +214,7 @@ body {
 
 .scroller {
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto; /* a zoomed page can be wider than the window */
   scroll-padding: 25vh 0;
   outline: none;
 }
@@ -310,15 +318,19 @@ body {
 .pages {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 24px;
   padding: 32px 24px 72px;
+  /* As wide as the widest page, so a zoomed page scrolls rather than clips. */
+  width: max-content;
+  min-width: 100%;
 }
 .pages[hidden] { display: none; }
 
 .page {
   position: relative;
   flex: none;
+  margin-inline: auto; /* centred while it fits, flush left once it overflows */
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), 0 10px 30px rgba(0, 0, 0, 0.12);
   border-radius: 3px;
@@ -725,6 +737,7 @@ kbd {
 @media (max-width: 560px) {
   .topbar-actions .btn span { display: none; }
   .topbar-actions .btn { width: 34px; padding: 0; justify-content: center; }
+  .topbar-actions .zoom-level { width: auto; min-width: 48px; padding: 0 4px; }
   .field-voice select { max-width: 150px; }
 }
 
