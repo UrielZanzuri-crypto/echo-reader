@@ -224,6 +224,18 @@ if (IDLE_MS > 0) {
   }, 60_000).unref()
 }
 
+// If the folder is deleted or moved while the server runs (a downloaded copy
+// thrown away after installing properly), stop rather than hold the port and
+// answer every page with "Not found".
+setInterval(async () => {
+  try {
+    await stat(join(PUBLIC_DIR, 'index.html'))
+  } catch {
+    if (!has('quiet')) console.log('The app folder is gone, shutting down.')
+    shutdown(0)
+  }
+}, 15_000).unref()
+
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => shutdown(0))
 
 // Last line of defence: stay up, log, and keep serving.

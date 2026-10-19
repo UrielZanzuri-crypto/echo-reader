@@ -29,7 +29,7 @@ esac
 
 # The latest release's tag, from the redirect GitHub answers with. GitHub
 # answers the odd 502 or times out now and then, so every request retries.
-LATEST="$(curl -fsSIL --retry 5 --retry-delay 2 -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" | sed 's|.*/tag/||')"
+LATEST="$({ curl -fsSIL --retry 5 --retry-delay 2 -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" || true; } | sed 's|.*/tag/||')"
 [ -n "$LATEST" ] || { echo "Could not reach GitHub. Is the internet connected? If it is, GitHub may be having a moment: wait a minute and run this line again." >&2; exit 1; }
 
 if [ -f "$DEST/.version" ] && [ "$(cat "$DEST/.version")" = "$LATEST" ] && [ -d "$DEST/Echo Reader.app" ]; then
@@ -74,10 +74,28 @@ else
   echo "Installed."
 fi
 
+# A server left behind by a copy whose folder was since deleted keeps its port
+# and answers every page with "Not found"; the browser can land on it. It still
+# identifies itself as Echo Reader but no longer serves its index, so stop it.
+for p in $(seq 4173 4193); do
+  if curl -fsS --max-time 1 "http://127.0.0.1:$p/__echo-reader" 2>/dev/null | grep -q echo-reader &&
+     ! curl -fsS --max-time 2 -o /dev/null "http://127.0.0.1:$p/" 2>/dev/null; then
+    for pid in $(lsof -ti "tcp:$p" -sTCP:LISTEN 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
+  fi
+done
+
 open "$DEST/Echo Reader.app"
+url=""
+for _ in $(seq 1 40); do
+  # (|| true: under set -e, a failing command substitution ends the script.)
+  url="$({ sed -n 's/.*"url": *"\([^"]*\)".*/\1/p' "$DEST/.echo-reader.json" 2>/dev/null || true; } | head -n 1)"
+  [ -n "$url" ] && curl -fsS --max-time 1 -o /dev/null "$url" 2>/dev/null && break
+  url=""; sleep 0.5
+done
 cat <<TXT
 
-Echo Reader is opening in your browser.
+Echo Reader is opening in your browser${url:+ at $url}.
+If a tab shows "Not found" or "can't connect", close it: it belongs to an older copy.
 To open it again later: Finder > Go > Home > Applications > Echo Reader > double-click "Echo Reader",
 or simply run this same command again.
 TXT
