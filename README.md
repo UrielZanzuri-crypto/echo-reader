@@ -49,7 +49,24 @@ npm test        # 59 unit and integration tests, no browser required
 `npm run build` writes `dist/`, a plain folder of static files that any static
 server can host (`npx serve dist`, `python3 -m http.server -d dist`, …).
 
-### Sending it to another Mac
+### Installing on another Mac
+
+One line in Terminal (Spotlight › "Terminal", paste, Enter) downloads the right
+zip for that Mac's chip from the latest GitHub release, unpacks it into
+`~/Applications/Echo Reader` and opens it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/UrielZanzuri-crypto/echo-reader/main/install.sh | bash
+```
+
+Running it again updates, or just reopens the reader. This is the route to
+give people: a zip downloaded in a browser is quarantined, and macOS then
+refuses an app that is not notarized — a double-click does nothing, or shows
+"could not verify", until *System Settings › Privacy & Security › Open Anyway*.
+A curl download carries no quarantine mark, so the app just opens. The Hebrew
+guide for recipients is `docs/Echo-Reader-Guide.pdf`.
+
+### Building the zips
 
 ```bash
 npm run package -- --with-node        # -> "Echo Reader.zip", about 40 MB, nothing to install
