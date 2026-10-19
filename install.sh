@@ -27,21 +27,37 @@ case "$(uname -m)" in
   *) echo "Echo Reader runs on Macs only (this is $(uname -sm))." >&2; exit 1 ;;
 esac
 
-# The latest release's tag, from the redirect GitHub answers with.
-LATEST="$(curl -fsSIL -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" | sed 's|.*/tag/||')"
-[ -n "$LATEST" ] || { echo "Could not reach GitHub. Is the internet connected?" >&2; exit 1; }
+# The latest release's tag, from the redirect GitHub answers with. GitHub
+# answers the odd 502 or times out now and then, so every request retries.
+LATEST="$(curl -fsSIL --retry 5 --retry-delay 2 -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest" | sed 's|.*/tag/||')"
+[ -n "$LATEST" ] || { echo "Could not reach GitHub. Is the internet connected? If it is, GitHub may be having a moment: wait a minute and run this line again." >&2; exit 1; }
 
 if [ -f "$DEST/.version" ] && [ "$(cat "$DEST/.version")" = "$LATEST" ] && [ -d "$DEST/Echo Reader.app" ]; then
   echo "Echo Reader $LATEST is already installed in $DEST. Opening it."
 else
+  # The zip is kept in the cache folder rather than a temp one so that an
+  # interrupted download resumes where it stopped, even on a later run.
+  CACHE="$HOME/Library/Caches/EchoReader"
+  ZIP="$CACHE/$LATEST-$ASSET"
+  mkdir -p "$CACHE"
+  echo "Downloading Echo Reader $LATEST for this Mac (about 400 MB)..."
+  ok=0
+  for attempt in 1 2 3 4 5 6; do
+    if curl -fL --progress-bar -C - --retry 3 --retry-delay 3 "https://github.com/$REPO/releases/download/$LATEST/$ASSET" -o "$ZIP"; then
+      ok=1; break
+    fi
+    [ "$attempt" = 6 ] || { echo "The download was interrupted (attempt $attempt of 6). Retrying in 5 seconds..."; sleep 5; }
+  done
+  [ "$ok" = 1 ] || { echo "The download kept failing. Check the internet connection, wait a minute, and run this line again: it will carry on from where it stopped." >&2; exit 1; }
+
   TMP="$(mktemp -d)"
   trap 'rm -rf "$TMP"' EXIT
-  echo "Downloading Echo Reader $LATEST for this Mac (about 400 MB)..."
-  curl -fL --progress-bar "https://github.com/$REPO/releases/download/$LATEST/$ASSET" -o "$TMP/$ASSET"
-
   echo "Installing into $DEST..."
-  ditto -x -k "$TMP/$ASSET" "$TMP/unpacked"
-  [ -d "$TMP/unpacked/Echo Reader/Echo Reader.app" ] || { echo "The download did not unpack as expected." >&2; exit 1; }
+  if ! ditto -x -k "$ZIP" "$TMP/unpacked" 2>/dev/null || [ ! -d "$TMP/unpacked/Echo Reader/Echo Reader.app" ]; then
+    rm -f "$ZIP"
+    echo "The downloaded file was damaged, so it was discarded. Run this line again to download it afresh." >&2
+    exit 1
+  fi
 
   # Stop a server left running by a previous copy, then replace it. Settings
   # and reading positions live in the browser, not in this folder.
@@ -54,6 +70,7 @@ else
   mv "$TMP/unpacked/Echo Reader" "$DEST"
   xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
   echo "$LATEST" > "$DEST/.version"
+  rm -f "$ZIP"
   echo "Installed."
 fi
 
